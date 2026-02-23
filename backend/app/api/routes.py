@@ -11,7 +11,9 @@ from app.core.chat import (
     ChatThreadResponse,
     generate_orion_reply,
 )
+
 from app.core.trading_settings import TradingSettings
+
 from app.storage.database import (
     add_chat_exchange,
     create_chat_thread,
@@ -19,7 +21,6 @@ from app.storage.database import (
     get_trading_settings,
     save_trading_settings,
 )
-
 router = APIRouter()
 
 
