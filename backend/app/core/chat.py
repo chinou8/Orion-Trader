@@ -30,6 +30,7 @@ class OrionReplyPayload(BaseModel):
     recommendations: list[str]
     watch_requests: list[str]
     news_brief: list[str]
+    market_analysis: dict[str, object] | None
     meta: dict[str, str]
 
 
@@ -56,6 +57,7 @@ class ChatThreadResponse(BaseModel):
 def generate_orion_reply(
     user_content: str,
     recent_news: list[str] | None = None,
+    market_analysis: dict[str, object] | None = None,
 ) -> OrionReplyPayload:
     normalized = user_content.lower()
     watch_requests: list[str] = []
@@ -73,6 +75,9 @@ def generate_orion_reply(
         news_brief = recent_news[:3]
         recommendations.append("Brief news ajouté depuis les flux RSS institutionnels.")
 
+    if market_analysis is not None:
+        recommendations.append("Analyse marché ajoutée en mode tech-only.")
+
     reply_text = (
         "Orion (tech-only): message reçu. "
         "Je stocke le contexte et prépare les prochaines vérifications techniques."
@@ -83,5 +88,6 @@ def generate_orion_reply(
         recommendations=recommendations,
         watch_requests=watch_requests,
         news_brief=news_brief,
+        market_analysis=market_analysis,
         meta={"mode": "tech-only", "timestamp": datetime.now(timezone.utc).isoformat()},
     )

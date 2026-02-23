@@ -6,6 +6,7 @@ from typing import Any
 
 from app.core.chat import ChatMessage, OrionReplyPayload
 from app.core.config import settings
+from app.core.market import MarketBar
 from app.core.rss import NewsItem, RssFeed, RssFeedCreateRequest, RssFeedUpdateRequest
 from app.core.trading_settings import TradingSettings, default_trading_settings
 from app.core.watchlist import WatchlistCreateRequest, WatchlistItem, WatchlistUpdateRequest
@@ -118,6 +119,25 @@ def init_db() -> None:
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 UNIQUE(feed_id, guid),
                 FOREIGN KEY(feed_id) REFERENCES rss_feeds(id) ON DELETE CASCADE
+            );
+            """
+        )
+
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS market_bars (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                symbol TEXT NOT NULL,
+                timeframe TEXT NOT NULL,
+                ts TEXT NOT NULL,
+                open REAL NOT NULL,
+                high REAL NOT NULL,
+                low REAL NOT NULL,
+                close REAL NOT NULL,
+                volume REAL NOT NULL,
+                source TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(symbol, timeframe, ts, source)
             );
             """
         )
@@ -512,6 +532,77 @@ def get_latest_news(limit: int = 50) -> list[NewsItem]:
     return [_row_to_news_item(row) for row in rows]
 
 
+def insert_market_bars(
+    symbol: str,
+    timeframe: str,
+    source: str,
+    bars: list[dict[str, float | str]],
+) -> int:
+    inserted = 0
+    with sqlite3.connect(settings.db_path) as connection:
+        for bar in bars:
+            cursor = connection.execute(
+                """
+                INSERT OR IGNORE INTO market_bars (
+                    symbol, timeframe, ts, open, high, low, close, volume, source
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
+                """,
+                (
+                    symbol.upper(),
+                    timeframe,
+                    str(bar["ts"]),
+                    float(bar["open"]),
+                    float(bar["high"]),
+                    float(bar["low"]),
+                    float(bar["close"]),
+                    float(bar["volume"]),
+                    source,
+                ),
+            )
+            if cursor.rowcount > 0:
+                inserted += 1
+        connection.commit()
+    return inserted
+
+
+def get_market_bars(symbol: str, timeframe: str = "1d", limit: int = 200) -> list[MarketBar]:
+    with sqlite3.connect(settings.db_path) as connection:
+        rows = connection.execute(
+            """
+            SELECT id, symbol, timeframe, ts, open, high, low, close, volume, source, created_at
+            FROM market_bars
+            WHERE symbol = ? AND timeframe = ?
+            ORDER BY ts DESC
+            LIMIT ?;
+            """,
+            (symbol.upper(), timeframe, limit),
+        ).fetchall()
+    return [_row_to_market_bar(row) for row in rows]
+
+
+def get_market_closes(symbol: str, timeframe: str = "1d", limit: int = 250) -> list[float]:
+    with sqlite3.connect(settings.db_path) as connection:
+        rows = connection.execute(
+            """
+            SELECT close
+            FROM market_bars
+            WHERE symbol = ? AND timeframe = ?
+            ORDER BY ts ASC
+            LIMIT ?;
+            """,
+            (symbol.upper(), timeframe, limit),
+        ).fetchall()
+    return [float(row[0]) for row in rows]
+
+
+def get_active_watchlist_symbols() -> list[str]:
+    with sqlite3.connect(settings.db_path) as connection:
+        rows = connection.execute(
+            "SELECT symbol FROM watchlist_items WHERE is_active = 1 ORDER BY id ASC;"
+        ).fetchall()
+    return [str(row[0]) for row in rows]
+
+
 def _fetch_watchlist_row(item_id: int) -> tuple[Any, ...] | None:
     with sqlite3.connect(settings.db_path) as connection:
         return connection.execute(
@@ -568,6 +659,22 @@ def _row_to_news_item(row: tuple[Any, ...]) -> NewsItem:
         raw_json=row[7],
         created_at=row[8],
         feed_name=row[9],
+    )
+
+
+def _row_to_market_bar(row: tuple[Any, ...]) -> MarketBar:
+    return MarketBar(
+        id=row[0],
+        symbol=row[1],
+        timeframe=row[2],
+        ts=row[3],
+        open=float(row[4]),
+        high=float(row[5]),
+        low=float(row[6]),
+        close=float(row[7]),
+        volume=float(row[8]),
+        source=row[9],
+        created_at=row[10],
     )
 
 

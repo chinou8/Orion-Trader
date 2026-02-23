@@ -106,3 +106,22 @@
   - `GET /api/news?limit=50`
 - Intégration Chat Orion:
   - si l'utilisateur demande "news" ou "marché", la réponse mock inclut `news_brief` (top 3 titres récents).
+
+## Module Market Data (Bloc 7)
+
+- Source V1: Stooq daily CSV (`https://stooq.com/q/d/l/?s={symbol}&i=d`).
+- Persistance SQLite:
+  - `market_bars(id, symbol, timeframe, ts, open, high, low, close, volume, source, created_at)`
+  - contrainte unique `(symbol, timeframe, ts, source)`.
+- Endpoints API:
+  - `POST /api/market/fetch?symbol=XXX`
+  - `GET /api/market/bars?symbol=XXX&limit=200`
+  - `GET /api/market/indicators?symbol=XXX`
+  - `POST /api/market/fetch_watchlist`
+- Indicateurs V1:
+  - SMA20 / SMA50 (close)
+  - RSI14
+  - volatilité (stddev des returns 20 périodes)
+  - `horizon_hint` basé sur SMA/RSI/volatilité.
+- Intégration Chat Orion (tech-only):
+  - requête "analyse <symbol>" ajoute un bloc `market_analysis` (trend, RSI, vol, horizon).

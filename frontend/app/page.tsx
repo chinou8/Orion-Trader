@@ -14,11 +14,21 @@ type NewsItem = {
   feed_name: string;
 };
 
+type MarketIndicators = {
+  symbol: string;
+  sma20: number | null;
+  sma50: number | null;
+  rsi14: number | null;
+  volatility: number | null;
+  horizon_hint: string;
+};
+
 const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://127.0.0.1:8080";
 
 export default function DashboardPage() {
   const [watchlistTop, setWatchlistTop] = useState<WatchlistItem[]>([]);
   const [newsTop, setNewsTop] = useState<NewsItem[]>([]);
+  const [marketTop, setMarketTop] = useState<MarketIndicators[]>([]);
 
   useEffect(() => {
     const loadData = async () => {
@@ -28,8 +38,9 @@ export default function DashboardPage() {
           fetch(`${backendUrl}/api/news?limit=5`, { cache: "no-store" })
         ]);
 
+        let watchlistPayload: WatchlistItem[] = [];
         if (watchlistRes.ok) {
-          const watchlistPayload = (await watchlistRes.json()) as WatchlistItem[];
+          watchlistPayload = (await watchlistRes.json()) as WatchlistItem[];
           setWatchlistTop(watchlistPayload.slice(0, 5));
         }
 
@@ -37,9 +48,23 @@ export default function DashboardPage() {
           const newsPayload = (await newsRes.json()) as NewsItem[];
           setNewsTop(newsPayload.slice(0, 5));
         }
+
+        const topSymbols = watchlistPayload.slice(0, 3).map((item) => item.symbol);
+        const indicatorResponses = await Promise.all(
+          topSymbols.map(async (symbol) => {
+            const res = await fetch(
+              `${backendUrl}/api/market/indicators?symbol=${encodeURIComponent(symbol)}`,
+              { cache: "no-store" }
+            );
+            if (!res.ok) return null;
+            return (await res.json()) as MarketIndicators;
+          })
+        );
+        setMarketTop(indicatorResponses.filter((x): x is MarketIndicators => x !== null));
       } catch {
         setWatchlistTop([]);
         setNewsTop([]);
+        setMarketTop([]);
       }
     };
 
@@ -50,7 +75,7 @@ export default function DashboardPage() {
     <main>
       <h1>Orion Trader Dashboard</h1>
       <p>
-        Minimal frontend scaffold. Backend status page: <a href="/status">/status</a> · Settings: <a href="/settings">/settings</a> · Chat: <a href="/chat">/chat</a> · Watchlist: <a href="/watchlist">/watchlist</a> · News: <a href="/news">/news</a>
+        Minimal frontend scaffold. Backend status page: <a href="/status">/status</a> · Settings: <a href="/settings">/settings</a> · Chat: <a href="/chat">/chat</a> · Watchlist: <a href="/watchlist">/watchlist</a> · News: <a href="/news">/news</a> · Market: <a href="/market">/market</a>
       </p>
 
       <div className="grid">
@@ -103,6 +128,22 @@ export default function DashboardPage() {
             </ul>
           )}
           <p><a href="/news">See all news</a></p>
+        </section>
+
+        <section className="card">
+          <h2>Market Snapshot</h2>
+          {marketTop.length === 0 ? (
+            <p>No market snapshot yet.</p>
+          ) : (
+            <ul>
+              {marketTop.map((item) => (
+                <li key={item.symbol}>
+                  <strong>{item.symbol}</strong> — RSI {item.rsi14 ?? "n/a"} — Trend {item.sma20 && item.sma50 && item.sma20 > item.sma50 ? "SMA20>SMA50" : "SMA20<=SMA50"}
+                </li>
+              ))}
+            </ul>
+          )}
+          <p><a href="/market">Open market module</a></p>
         </section>
       </div>
     </main>

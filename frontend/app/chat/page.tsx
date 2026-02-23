@@ -15,6 +15,13 @@ type OrionReply = {
   recommendations: string[];
   watch_requests: string[];
   news_brief: string[];
+  market_analysis: {
+    symbol: string;
+    trend: string;
+    rsi14: number | null;
+    volatility: number | null;
+    horizon_hint: string;
+  } | null;
   meta: { mode: string; timestamp: string };
 };
 
@@ -49,6 +56,7 @@ export default function ChatPage() {
   const [watchRequests, setWatchRequests] = useState<string[]>([]);
   const [watchlistCreated, setWatchlistCreated] = useState<WatchlistItem[]>([]);
   const [newsBrief, setNewsBrief] = useState<string[]>([]);
+  const [marketAnalysis, setMarketAnalysis] = useState<OrionReply["market_analysis"]>(null);
 
   useEffect(() => {
     const initThread = async () => {
@@ -122,6 +130,7 @@ export default function ChatPage() {
       setWatchRequests(payload.orion_reply.watch_requests);
       setWatchlistCreated(payload.watchlist_created);
       setNewsBrief(payload.orion_reply.news_brief);
+      setMarketAnalysis(payload.orion_reply.market_analysis);
       setText("");
       setStatus("Saved");
     } catch (err) {
@@ -160,6 +169,20 @@ export default function ChatPage() {
         <button type="submit">Send</button>
       </form>
 
+
+      {marketAnalysis && (
+        <section className="card">
+          <h2>Market analysis (tech-only)</h2>
+          <ul>
+            <li>Symbol: {marketAnalysis.symbol}</li>
+            <li>Trend: {marketAnalysis.trend}</li>
+            <li>RSI14: {marketAnalysis.rsi14 ?? "n/a"}</li>
+            <li>Volatility: {marketAnalysis.volatility ?? "n/a"}</li>
+            <li>Horizon: {marketAnalysis.horizon_hint}</li>
+          </ul>
+          <p>See market module: <a href="/market">/market</a></p>
+        </section>
+      )}
 
       {newsBrief.length > 0 && (
         <section className="card">

@@ -146,3 +146,27 @@ button {
   border-top: 1px solid #1f2937;
   padding: 0.6rem 0;
 }
+
+.market-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.7rem;
+}
+
+.bars-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.bars-table th,
+.bars-table td {
+  border: 1px solid #1f2937;
+  padding: 0.35rem 0.45rem;
+  text-align: right;
+}
+
+.bars-table th:first-child,
+.bars-table td:first-child {
+  text-align: left;
+}
