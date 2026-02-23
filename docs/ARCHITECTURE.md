@@ -46,3 +46,31 @@
 - Base locale SQLite sur disque (`./data/orion.db`) pour la phase actuelle.
 - Cible ultérieure: disque persistant en environnement déployé.
 - Données prévues: logs, reflections, mémoire Orion.
+
+## Module Settings (Bloc 3)
+
+- Persistance des paramètres applicatifs dans SQLite (`settings` table, clé `app_settings`).
+- API backend:
+  - `GET /api/settings` : retourne la configuration complète.
+  - `PUT /api/settings` : valide puis persiste la configuration complète.
+- Validation appliquée côté backend:
+  - types stricts (bool/int/float/string enum `LIMIT`),
+  - bornes `0..1` pour seuils/cap/divergence,
+  - `max_trades_per_day >= 0`,
+  - `boost_trades_per_day >= max_trades_per_day`.
+- Frontend Next.js:
+  - page `/settings` pour charger/éditer/sauvegarder ces paramètres via `NEXT_PUBLIC_BACKEND_URL`.
+
+## Module Chat Orion (Bloc 4)
+
+- Persistance SQLite:
+  - `chat_threads(id, title, created_at)`
+  - `chat_messages(id, thread_id, role[user|orion], content, created_at)`
+- Endpoints API:
+  - `POST /api/chat/thread` : crée un thread (titre optionnel).
+  - `GET /api/chat/thread/{thread_id}` : retourne le thread + messages ordonnés.
+  - `POST /api/chat/thread/{thread_id}/message` : stocke le message user, génère et stocke la réponse Orion.
+- Réponse Orion V0 mock:
+  - structure JSON fixe `{reply_text, recommendations, watch_requests, meta}`
+  - mode `tech-only` + timestamp
+  - règles simples sur mots-clés (ex: "surveille" => watch request).
