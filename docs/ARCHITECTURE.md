@@ -74,3 +74,17 @@
   - structure JSON fixe `{reply_text, recommendations, watch_requests, meta}`
   - mode `tech-only` + timestamp
   - règles simples sur mots-clés (ex: "surveille" => watch request).
+
+## Module Watchlist (Bloc 5)
+
+- Persistance SQLite:
+  - `watchlist_items(id, symbol, name, asset_type, market, notes, is_active, created_at, updated_at)`
+- Endpoints API:
+  - `GET /api/watchlist` : retourne les items actifs.
+  - `POST /api/watchlist` : ajoute un item (symbol requis).
+  - `PUT /api/watchlist/{id}` : met à jour un item (notes, active/inactive, etc.).
+  - `DELETE /api/watchlist/{id}` : soft delete (`is_active=false`).
+- Intégration Chat Orion:
+  - lors de `POST /api/chat/thread/{thread_id}/message`, les `watch_requests` sont analysées,
+  - les symboles détectés sont créés en watchlist si absents/inactifs,
+  - la réponse inclut `watchlist_created` avec les items nouvellement créés.

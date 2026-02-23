@@ -3,6 +3,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 
+from app.core.watchlist import WatchlistItem
+
 
 class ChatMessage(BaseModel):
     id: int
@@ -41,6 +43,7 @@ class ChatMessageResponse(BaseModel):
     user_message: ChatMessage
     orion_message: ChatMessage
     orion_reply: OrionReplyPayload
+    watchlist_created: list[WatchlistItem]
 
 
 class ChatThreadResponse(BaseModel):

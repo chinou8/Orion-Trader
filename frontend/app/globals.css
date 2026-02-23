@@ -116,3 +116,24 @@ button {
   background: #0b1220;
   color: #e5e7eb;
 }
+
+.watchlist-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.watchlist-form input {
+  min-width: 220px;
+  padding: 0.5rem;
+  border-radius: 8px;
+  border: 1px solid #334155;
+  background: #0b1220;
+  color: #e5e7eb;
+}
+
+.watchlist-list {
+  display: grid;
+  gap: 0.8rem;
+}

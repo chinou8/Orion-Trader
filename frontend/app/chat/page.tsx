@@ -23,11 +23,18 @@ type ChatThreadResponse = {
   messages: ChatMessage[];
 };
 
+type WatchlistItem = {
+  id: number;
+  symbol: string;
+  notes: string;
+};
+
 type ChatSendResponse = {
   thread_id: number;
   user_message: ChatMessage;
   orion_message: ChatMessage;
   orion_reply: OrionReply;
+  watchlist_created: WatchlistItem[];
 };
 
 const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://127.0.0.1:8080";
@@ -39,6 +46,7 @@ export default function ChatPage() {
   const [status, setStatus] = useState<string>("Initializing thread...");
   const [error, setError] = useState<string>("");
   const [watchRequests, setWatchRequests] = useState<string[]>([]);
+  const [watchlistCreated, setWatchlistCreated] = useState<WatchlistItem[]>([]);
 
   useEffect(() => {
     const initThread = async () => {
@@ -110,6 +118,7 @@ export default function ChatPage() {
       const payload = (await response.json()) as ChatSendResponse;
       setMessages((prev) => [...prev, payload.user_message, payload.orion_message]);
       setWatchRequests(payload.orion_reply.watch_requests);
+      setWatchlistCreated(payload.watchlist_created);
       setText("");
       setStatus("Saved");
     } catch (err) {
@@ -148,6 +157,20 @@ export default function ChatPage() {
         <button type="submit">Send</button>
       </form>
 
+
+      {watchlistCreated.length > 0 && (
+        <section className="card">
+          <h2>Watchlist items created automatically</h2>
+          <ul>
+            {watchlistCreated.map((item) => (
+              <li key={item.id}>
+                <strong>{item.symbol}</strong> {item.notes ? `- ${item.notes}` : ""}
+              </li>
+            ))}
+          </ul>
+          <p>View full list: <a href="/watchlist">/watchlist</a></p>
+        </section>
+      )}
       {watchRequests.length > 0 && (
         <section className="card">
           <h2>Watchlist requests</h2>

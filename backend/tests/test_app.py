@@ -106,3 +106,38 @@ def test_create_thread_and_post_message_and_get_thread(isolated_db: Path) -> Non
     assert len(thread_data["messages"]) == 2
     assert thread_data["messages"][0]["role"] == "user"
     assert thread_data["messages"][1]["role"] == "orion"
+
+
+def test_post_watchlist_item(isolated_db: Path) -> None:
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/watchlist",
+        json={"symbol": "AIR.PA", "notes": "Core watch candidate"},
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["symbol"] == "AIR.PA"
+    assert payload["is_active"] is True
+
+
+def test_chat_surveille_creates_watchlist_item(isolated_db: Path) -> None:
+    client = TestClient(app)
+
+    create_thread = client.post("/api/chat/thread", json={"title": "Watchlist Thread"})
+    assert create_thread.status_code == 200
+    thread_id = create_thread.json()["thread_id"]
+
+    message_response = client.post(
+        f"/api/chat/thread/{thread_id}/message",
+        json={"content": "surveille AIR.PA"},
+    )
+    assert message_response.status_code == 200
+    body = message_response.json()
+    assert body["watchlist_created"]
+    assert body["watchlist_created"][0]["symbol"] == "AIR.PA"
+
+    watchlist_response = client.get("/api/watchlist")
+    assert watchlist_response.status_code == 200
+    symbols = [item["symbol"] for item in watchlist_response.json()]
+    assert "AIR.PA" in symbols

@@ -1,4 +1,5 @@
 import json
+import re
 import sqlite3
 from pathlib import Path
 from typing import Any
@@ -6,8 +7,10 @@ from typing import Any
 from app.core.chat import ChatMessage, OrionReplyPayload
 from app.core.config import settings
 from app.core.trading_settings import TradingSettings, default_trading_settings
+from app.core.watchlist import WatchlistCreateRequest, WatchlistItem, WatchlistUpdateRequest
 
 APP_SETTINGS_KEY = "app_settings"
+SYMBOL_REGEX = re.compile(r"\b[A-Z]{1,6}(?:\.[A-Z]{1,4})?\b")
 
 
 def init_db() -> None:
@@ -49,7 +52,6 @@ def init_db() -> None:
             );
             """
         )
-
         connection.execute(
             """
             CREATE TABLE IF NOT EXISTS chat_messages (
@@ -62,7 +64,21 @@ def init_db() -> None:
             );
             """
         )
-
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS watchlist_items (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                symbol TEXT NOT NULL,
+                name TEXT NOT NULL DEFAULT '',
+                asset_type TEXT NOT NULL DEFAULT 'EQUITY',
+                market TEXT NOT NULL DEFAULT 'EU',
+                notes TEXT NOT NULL DEFAULT '',
+                is_active INTEGER NOT NULL DEFAULT 1,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+            """
+        )
         connection.commit()
 
 
@@ -141,16 +157,7 @@ def get_chat_thread(thread_id: int) -> tuple[str, list[ChatMessage]]:
             (thread_id,),
         ).fetchall()
 
-    messages = [
-        ChatMessage(
-            id=row[0],
-            thread_id=row[1],
-            role=row[2],
-            content=row[3],
-            created_at=row[4],
-        )
-        for row in message_rows
-    ]
+    messages = [_row_to_chat_message(row) for row in message_rows]
     return str(thread_row[0]), messages
 
 
@@ -185,21 +192,194 @@ def add_chat_exchange(
     if user_row is None or orion_row is None:
         raise RuntimeError("Failed to persist chat messages")
 
-    return (
-        ChatMessage(
-            id=user_row[0],
-            thread_id=user_row[1],
-            role=user_row[2],
-            content=user_row[3],
-            created_at=user_row[4],
-        ),
-        ChatMessage(
-            id=orion_row[0],
-            thread_id=orion_row[1],
-            role=orion_row[2],
-            content=orion_row[3],
-            created_at=orion_row[4],
-        ),
+    return _row_to_chat_message(user_row), _row_to_chat_message(orion_row)
+
+
+def get_watchlist_items(active_only: bool = True, limit: int | None = None) -> list[WatchlistItem]:
+    query = (
+        "SELECT id, symbol, name, asset_type, market, notes, is_active, created_at, updated_at "
+        "FROM watchlist_items"
+    )
+    params: list[Any] = []
+
+    if active_only:
+        query += " WHERE is_active = 1"
+
+    query += " ORDER BY updated_at DESC, id DESC"
+
+    if limit is not None:
+        query += " LIMIT ?"
+        params.append(limit)
+
+    with sqlite3.connect(settings.db_path) as connection:
+        rows = connection.execute(query, tuple(params)).fetchall()
+
+    return [_row_to_watchlist_item(row) for row in rows]
+
+
+def create_watchlist_item(payload: WatchlistCreateRequest) -> WatchlistItem:
+    symbol = payload.symbol.strip().upper()
+    if not symbol:
+        raise ValueError("symbol_required")
+
+    with sqlite3.connect(settings.db_path) as connection:
+        existing = connection.execute(
+            "SELECT id, symbol, name, asset_type, market, notes, is_active, created_at, updated_at "
+            "FROM watchlist_items WHERE symbol = ? AND is_active = 1 LIMIT 1;",
+            (symbol,),
+        ).fetchone()
+        if existing is not None:
+            return _row_to_watchlist_item(existing)
+
+        cursor = connection.execute(
+            """
+            INSERT INTO watchlist_items (symbol, name, asset_type, market, notes, is_active)
+            VALUES (?, ?, ?, ?, ?, 1);
+            """,
+            (symbol, payload.name, payload.asset_type, payload.market, payload.notes),
+        )
+        row = connection.execute(
+            "SELECT id, symbol, name, asset_type, market, notes, is_active, created_at, updated_at "
+            "FROM watchlist_items WHERE id = ?;",
+            (cursor.lastrowid,),
+        ).fetchone()
+        connection.commit()
+
+    if row is None:
+        raise RuntimeError("Failed to create watchlist item")
+
+    return _row_to_watchlist_item(row)
+
+
+def update_watchlist_item(item_id: int, payload: WatchlistUpdateRequest) -> WatchlistItem:
+    current = _fetch_watchlist_row(item_id)
+    if current is None:
+        raise ValueError("watchlist_not_found")
+
+    updates = payload.model_dump(exclude_unset=True)
+    if "symbol" in updates and updates["symbol"] is not None:
+        updates["symbol"] = updates["symbol"].strip().upper()
+
+    merged = {
+        "symbol": updates.get("symbol", current[1]),
+        "name": updates.get("name", current[2]),
+        "asset_type": updates.get("asset_type", current[3]),
+        "market": updates.get("market", current[4]),
+        "notes": updates.get("notes", current[5]),
+        "is_active": updates.get("is_active", bool(current[6])),
+    }
+
+    with sqlite3.connect(settings.db_path) as connection:
+        connection.execute(
+            """
+            UPDATE watchlist_items
+            SET symbol = ?,
+                name = ?,
+                asset_type = ?,
+                market = ?,
+                notes = ?,
+                is_active = ?,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?;
+            """,
+            (
+                merged["symbol"],
+                merged["name"],
+                merged["asset_type"],
+                merged["market"],
+                merged["notes"],
+                int(bool(merged["is_active"])),
+                item_id,
+            ),
+        )
+        row = connection.execute(
+            "SELECT id, symbol, name, asset_type, market, notes, is_active, created_at, updated_at "
+            "FROM watchlist_items WHERE id = ?;",
+            (item_id,),
+        ).fetchone()
+        connection.commit()
+
+    if row is None:
+        raise RuntimeError("Failed to update watchlist item")
+
+    return _row_to_watchlist_item(row)
+
+
+def soft_delete_watchlist_item(item_id: int) -> WatchlistItem:
+    return update_watchlist_item(item_id, WatchlistUpdateRequest(is_active=False))
+
+
+def create_watchlist_items_from_requests(watch_requests: list[str]) -> list[WatchlistItem]:
+    created: list[WatchlistItem] = []
+    seen: set[str] = set()
+
+    for request in watch_requests:
+        symbols = extract_symbols(request)
+        for symbol in symbols:
+            if symbol in seen:
+                continue
+            seen.add(symbol)
+            existing = get_watchlist_item_by_symbol(symbol)
+            if existing and existing.is_active:
+                continue
+            item = create_watchlist_item(
+                WatchlistCreateRequest(
+                    symbol=symbol,
+                    notes=f"Created from Orion chat request: {request[:120]}",
+                )
+            )
+            created.append(item)
+
+    return created
+
+
+def extract_symbols(text: str) -> list[str]:
+    return [match.group(0).upper() for match in SYMBOL_REGEX.finditer(text)]
+
+
+def get_watchlist_item_by_symbol(symbol: str) -> WatchlistItem | None:
+    with sqlite3.connect(settings.db_path) as connection:
+        row = connection.execute(
+            "SELECT id, symbol, name, asset_type, market, notes, is_active, created_at, updated_at "
+            "FROM watchlist_items WHERE symbol = ? ORDER BY id DESC LIMIT 1;",
+            (symbol.upper(),),
+        ).fetchone()
+
+    if row is None:
+        return None
+    return _row_to_watchlist_item(row)
+
+
+def _fetch_watchlist_row(item_id: int) -> tuple[Any, ...] | None:
+    with sqlite3.connect(settings.db_path) as connection:
+        return connection.execute(
+            "SELECT id, symbol, name, asset_type, market, notes, is_active, created_at, updated_at "
+            "FROM watchlist_items WHERE id = ?;",
+            (item_id,),
+        ).fetchone()
+
+
+def _row_to_chat_message(row: tuple[Any, ...]) -> ChatMessage:
+    return ChatMessage(
+        id=row[0],
+        thread_id=row[1],
+        role=row[2],
+        content=row[3],
+        created_at=row[4],
+    )
+
+
+def _row_to_watchlist_item(row: tuple[Any, ...]) -> WatchlistItem:
+    return WatchlistItem(
+        id=row[0],
+        symbol=row[1],
+        name=row[2],
+        asset_type=row[3],
+        market=row[4],
+        notes=row[5],
+        is_active=bool(row[6]),
+        created_at=row[7],
+        updated_at=row[8],
     )
 
 
