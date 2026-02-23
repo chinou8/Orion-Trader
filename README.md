@@ -117,4 +117,5 @@ GitHub Actions (`.github/workflows/ci.yml`) exécute:
 - lint (`ruff`)
 - tests (`pytest`)
 - build léger backend (`python -m compileall backend`)
-- build frontend (`npm ci` + `npm run build` dans `frontend/`)
+- build frontend (`npm install` + `npm run build` dans `frontend/`)
+- note: quand un `package-lock.json` sera disponible (généré sur VM), on repassera à `npm ci`
