@@ -64,6 +64,7 @@ npm run dev
 
 - Frontend: `http://127.0.0.1:3000/`
 - Statut backend: `http://127.0.0.1:3000/status`
+- Settings: `http://127.0.0.1:3000/settings`
 
 > Sur VM, l'accès UI se fera plus tard via tunnel SSH.
 

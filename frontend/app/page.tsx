@@ -3,7 +3,7 @@ export default function DashboardPage() {
     <main>
       <h1>Orion Trader Dashboard</h1>
       <p>
-        Minimal frontend scaffold. Backend status page: <a href="/status">/status</a>
+        Minimal frontend scaffold. Backend status page: <a href="/status">/status</a> · Settings: <a href="/settings">/settings</a>
       </p>
 
       <div className="grid">
