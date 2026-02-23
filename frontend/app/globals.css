@@ -1,0 +1,148 @@
+:root {
+  color-scheme: dark;
+  font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: #0b1020;
+  color: #e5e7eb;
+}
+
+a {
+  color: #60a5fa;
+}
+
+main {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 2rem 1rem;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 1rem;
+}
+
+.card {
+  border: 1px solid #1f2937;
+  border-radius: 12px;
+  padding: 1rem;
+  background: #111827;
+  min-height: 160px;
+}
+
+.status-ok {
+  color: #4ade80;
+}
+
+.status-ko {
+  color: #f87171;
+}
+
+pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.settings-form {
+  display: grid;
+  gap: 0.75rem;
+  max-width: 520px;
+}
+
+.settings-form label {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+}
+
+.settings-form input[type="number"],
+.settings-form input[type="text"] {
+  width: 160px;
+}
+
+button {
+  width: fit-content;
+  padding: 0.5rem 0.9rem;
+  border-radius: 8px;
+  border: 1px solid #334155;
+  background: #1d4ed8;
+  color: white;
+  cursor: pointer;
+}
+
+.chat-box {
+  border: 1px solid #1f2937;
+  border-radius: 12px;
+  padding: 1rem;
+  min-height: 180px;
+  margin-bottom: 1rem;
+}
+
+.chat-message {
+  margin-bottom: 0.75rem;
+  padding: 0.6rem;
+  border-radius: 8px;
+}
+
+.chat-user {
+  background: #0f172a;
+}
+
+.chat-orion {
+  background: #111827;
+  border: 1px solid #1f2937;
+}
+
+.chat-form {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.chat-form input {
+  flex: 1;
+  min-width: 220px;
+  padding: 0.5rem;
+  border-radius: 8px;
+  border: 1px solid #334155;
+  background: #0b1220;
+  color: #e5e7eb;
+}
+
+.watchlist-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.watchlist-form input {
+  min-width: 220px;
+  padding: 0.5rem;
+  border-radius: 8px;
+  border: 1px solid #334155;
+  background: #0b1220;
+  color: #e5e7eb;
+}
+
+.watchlist-list {
+  display: grid;
+  gap: 0.8rem;
+}
+
+.feed-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: center;
+  border-top: 1px solid #1f2937;
+  padding: 0.6rem 0;
+}
