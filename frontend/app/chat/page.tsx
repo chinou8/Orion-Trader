@@ -14,6 +14,7 @@ type OrionReply = {
   reply_text: string;
   recommendations: string[];
   watch_requests: string[];
+  news_brief: string[];
   meta: { mode: string; timestamp: string };
 };
 
@@ -47,6 +48,7 @@ export default function ChatPage() {
   const [error, setError] = useState<string>("");
   const [watchRequests, setWatchRequests] = useState<string[]>([]);
   const [watchlistCreated, setWatchlistCreated] = useState<WatchlistItem[]>([]);
+  const [newsBrief, setNewsBrief] = useState<string[]>([]);
 
   useEffect(() => {
     const initThread = async () => {
@@ -119,6 +121,7 @@ export default function ChatPage() {
       setMessages((prev) => [...prev, payload.user_message, payload.orion_message]);
       setWatchRequests(payload.orion_reply.watch_requests);
       setWatchlistCreated(payload.watchlist_created);
+      setNewsBrief(payload.orion_reply.news_brief);
       setText("");
       setStatus("Saved");
     } catch (err) {
@@ -157,6 +160,18 @@ export default function ChatPage() {
         <button type="submit">Send</button>
       </form>
 
+
+      {newsBrief.length > 0 && (
+        <section className="card">
+          <h2>News brief (tech-only)</h2>
+          <ul>
+            {newsBrief.map((title, idx) => (
+              <li key={`${title}-${idx}`}>{title}</li>
+            ))}
+          </ul>
+          <p>See full feed: <a href="/news">/news</a></p>
+        </section>
+      )}
 
       {watchlistCreated.length > 0 && (
         <section className="card">

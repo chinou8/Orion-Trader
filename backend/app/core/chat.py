@@ -29,6 +29,7 @@ class OrionReplyPayload(BaseModel):
     reply_text: str
     recommendations: list[str]
     watch_requests: list[str]
+    news_brief: list[str]
     meta: dict[str, str]
 
 
@@ -52,10 +53,14 @@ class ChatThreadResponse(BaseModel):
     messages: list[ChatMessage]
 
 
-def generate_orion_reply(user_content: str) -> OrionReplyPayload:
+def generate_orion_reply(
+    user_content: str,
+    recent_news: list[str] | None = None,
+) -> OrionReplyPayload:
     normalized = user_content.lower()
     watch_requests: list[str] = []
     recommendations: list[str] = []
+    news_brief: list[str] = []
 
     if "surveille" in normalized:
         watch_requests.append(user_content.strip())
@@ -63,6 +68,10 @@ def generate_orion_reply(user_content: str) -> OrionReplyPayload:
 
     if "divergence" in normalized:
         recommendations.append("Vérifier divergence liquid/illiquid avant proposition d'ordre.")
+
+    if recent_news and ("news" in normalized or "marché" in normalized or "marche" in normalized):
+        news_brief = recent_news[:3]
+        recommendations.append("Brief news ajouté depuis les flux RSS institutionnels.")
 
     reply_text = (
         "Orion (tech-only): message reçu. "
@@ -73,5 +82,6 @@ def generate_orion_reply(user_content: str) -> OrionReplyPayload:
         reply_text=reply_text,
         recommendations=recommendations,
         watch_requests=watch_requests,
+        news_brief=news_brief,
         meta={"mode": "tech-only", "timestamp": datetime.now(timezone.utc).isoformat()},
     )

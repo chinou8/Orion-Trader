@@ -1,6 +1,6 @@
 import json
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import HTMLResponse
 
 from app.core.chat import (
@@ -11,18 +11,24 @@ from app.core.chat import (
     ChatThreadResponse,
     generate_orion_reply,
 )
+from app.core.rss import NewsItem, RssFeed, RssFeedCreateRequest, RssFeedUpdateRequest
 from app.core.trading_settings import TradingSettings
 from app.core.watchlist import WatchlistCreateRequest, WatchlistItem, WatchlistUpdateRequest
+from app.rss.service import fetch_all_active_feeds
 from app.storage.database import (
     add_chat_exchange,
     create_chat_thread,
+    create_rss_feed,
     create_watchlist_item,
     create_watchlist_items_from_requests,
     get_chat_thread,
+    get_latest_news,
+    get_rss_feeds,
     get_trading_settings,
     get_watchlist_items,
     save_trading_settings,
     soft_delete_watchlist_item,
+    update_rss_feed,
     update_watchlist_item,
 )
 
@@ -90,6 +96,37 @@ def delete_watchlist(item_id: int) -> WatchlistItem:
         raise
 
 
+@router.get("/api/rss/feeds", response_model=list[RssFeed])
+def get_rss_feeds_endpoint() -> list[RssFeed]:
+    return get_rss_feeds()
+
+
+@router.post("/api/rss/feeds", response_model=RssFeed)
+def post_rss_feed(payload: RssFeedCreateRequest) -> RssFeed:
+    return create_rss_feed(payload)
+
+
+@router.put("/api/rss/feeds/{feed_id}", response_model=RssFeed)
+def put_rss_feed(feed_id: int, payload: RssFeedUpdateRequest) -> RssFeed:
+    try:
+        return update_rss_feed(feed_id, payload)
+    except ValueError as exc:
+        if str(exc) == "feed_not_found":
+            raise HTTPException(status_code=404, detail="RSS feed not found") from exc
+        raise
+
+
+@router.post("/api/rss/fetch")
+def post_rss_fetch() -> dict[str, int]:
+    new_items = fetch_all_active_feeds()
+    return {"new_items": new_items}
+
+
+@router.get("/api/news", response_model=list[NewsItem])
+def get_news(limit: int = Query(50, ge=1, le=500)) -> list[NewsItem]:
+    return get_latest_news(limit=limit)
+
+
 @router.post("/api/chat/thread", response_model=ChatThreadCreateResponse)
 def post_chat_thread(payload: ChatThreadCreateRequest) -> ChatThreadCreateResponse:
     thread_id, title = create_chat_thread(payload.title)
@@ -110,7 +147,8 @@ def get_thread(thread_id: int) -> ChatThreadResponse:
 
 @router.post("/api/chat/thread/{thread_id}/message", response_model=ChatMessageResponse)
 def post_thread_message(thread_id: int, payload: ChatMessageRequest) -> ChatMessageResponse:
-    orion_reply = generate_orion_reply(payload.content)
+    latest_news_titles = [item.title for item in get_latest_news(limit=3)]
+    orion_reply = generate_orion_reply(payload.content, recent_news=latest_news_titles)
 
     try:
         user_message, orion_message = add_chat_exchange(thread_id, payload.content, orion_reply)

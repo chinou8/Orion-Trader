@@ -88,3 +88,21 @@
   - lors de `POST /api/chat/thread/{thread_id}/message`, les `watch_requests` sont analysées,
   - les symboles détectés sont créés en watchlist si absents/inactifs,
   - la réponse inclut `watchlist_created` avec les items nouvellement créés.
+
+## Module RSS Institutionnels + News (Bloc 6)
+
+- Persistance SQLite:
+  - `rss_feeds(id, name, url, is_active, created_at, updated_at)`
+  - `news_items(id, feed_id, guid, title, link, published_at, summary, raw_json, created_at)`
+  - contrainte d'unicité: `(feed_id, guid)` pour la déduplication.
+- Service RSS/Atom:
+  - parsing via `feedparser`,
+  - dédup guid (fallback `link|title` si guid absent).
+- Endpoints API:
+  - `GET /api/rss/feeds`
+  - `POST /api/rss/feeds`
+  - `PUT /api/rss/feeds/{id}`
+  - `POST /api/rss/fetch`
+  - `GET /api/news?limit=50`
+- Intégration Chat Orion:
+  - si l'utilisateur demande "news" ou "marché", la réponse mock inclut `news_brief` (top 3 titres récents).

@@ -6,11 +6,22 @@ from typing import Any
 
 from app.core.chat import ChatMessage, OrionReplyPayload
 from app.core.config import settings
+from app.core.rss import NewsItem, RssFeed, RssFeedCreateRequest, RssFeedUpdateRequest
 from app.core.trading_settings import TradingSettings, default_trading_settings
 from app.core.watchlist import WatchlistCreateRequest, WatchlistItem, WatchlistUpdateRequest
 
 APP_SETTINGS_KEY = "app_settings"
 SYMBOL_REGEX = re.compile(r"\b[A-Z]{1,6}(?:\.[A-Z]{1,4})?\b")
+DEFAULT_RSS_FEEDS: list[tuple[str, str, bool]] = [
+    (
+        "AMF",
+        "https://www.amf-france.org/fr/actualites-publications/actualites/rss.xml?item=all",
+        False,
+    ),
+    ("ECB Press Releases", "https://www.ecb.europa.eu/press/rss/press.xml", True),
+    ("DG Trésor", "https://www.tresor.economie.gouv.fr/RSS", False),
+    ("Eurostat", "https://ec.europa.eu/eurostat/web/main/rss", False),
+]
 
 
 def init_db() -> None:
@@ -64,6 +75,7 @@ def init_db() -> None:
             );
             """
         )
+
         connection.execute(
             """
             CREATE TABLE IF NOT EXISTS watchlist_items (
@@ -79,6 +91,46 @@ def init_db() -> None:
             );
             """
         )
+
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS rss_feeds (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                url TEXT NOT NULL,
+                is_active INTEGER NOT NULL DEFAULT 1,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+            """
+        )
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS news_items (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                feed_id INTEGER NOT NULL,
+                guid TEXT NOT NULL,
+                title TEXT NOT NULL,
+                link TEXT NOT NULL,
+                published_at TEXT NOT NULL,
+                summary TEXT NOT NULL,
+                raw_json TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(feed_id, guid),
+                FOREIGN KEY(feed_id) REFERENCES rss_feeds(id) ON DELETE CASCADE
+            );
+            """
+        )
+
+        for name, url, is_active in DEFAULT_RSS_FEEDS:
+            connection.execute(
+                """
+                INSERT OR IGNORE INTO rss_feeds (name, url, is_active)
+                VALUES (?, ?, ?);
+                """,
+                (name, url, int(is_active)),
+            )
+
         connection.commit()
 
 
@@ -350,6 +402,116 @@ def get_watchlist_item_by_symbol(symbol: str) -> WatchlistItem | None:
     return _row_to_watchlist_item(row)
 
 
+def get_rss_feeds() -> list[RssFeed]:
+    with sqlite3.connect(settings.db_path) as connection:
+        rows = connection.execute(
+            "SELECT id, name, url, is_active, created_at, updated_at "
+            "FROM rss_feeds ORDER BY id ASC;"
+        ).fetchall()
+    return [_row_to_rss_feed(row) for row in rows]
+
+
+def get_active_rss_feeds() -> list[RssFeed]:
+    with sqlite3.connect(settings.db_path) as connection:
+        rows = connection.execute(
+            """
+            SELECT id, name, url, is_active, created_at, updated_at
+            FROM rss_feeds
+            WHERE is_active = 1
+            ORDER BY id ASC;
+            """
+        ).fetchall()
+    return [_row_to_rss_feed(row) for row in rows]
+
+
+def create_rss_feed(payload: RssFeedCreateRequest) -> RssFeed:
+    with sqlite3.connect(settings.db_path) as connection:
+        cursor = connection.execute(
+            "INSERT INTO rss_feeds (name, url, is_active) VALUES (?, ?, ?);",
+            (payload.name.strip(), payload.url.strip(), int(payload.is_active)),
+        )
+        row = connection.execute(
+            "SELECT id, name, url, is_active, created_at, updated_at FROM rss_feeds WHERE id = ?;",
+            (cursor.lastrowid,),
+        ).fetchone()
+        connection.commit()
+
+    if row is None:
+        raise RuntimeError("Failed to create rss feed")
+    return _row_to_rss_feed(row)
+
+
+def update_rss_feed(feed_id: int, payload: RssFeedUpdateRequest) -> RssFeed:
+    with sqlite3.connect(settings.db_path) as connection:
+        current = connection.execute(
+            "SELECT id, name, url, is_active, created_at, updated_at FROM rss_feeds WHERE id = ?;",
+            (feed_id,),
+        ).fetchone()
+        if current is None:
+            raise ValueError("feed_not_found")
+
+        name = payload.name if payload.name is not None else current[1]
+        is_active = int(payload.is_active) if payload.is_active is not None else int(current[3])
+
+        connection.execute(
+            """
+            UPDATE rss_feeds
+            SET name = ?, is_active = ?, updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?;
+            """,
+            (name, is_active, feed_id),
+        )
+        row = connection.execute(
+            "SELECT id, name, url, is_active, created_at, updated_at FROM rss_feeds WHERE id = ?;",
+            (feed_id,),
+        ).fetchone()
+        connection.commit()
+
+    if row is None:
+        raise RuntimeError("Failed to update rss feed")
+    return _row_to_rss_feed(row)
+
+
+def create_news_item(
+    feed_id: int,
+    guid: str,
+    title: str,
+    link: str,
+    published_at: str,
+    summary: str,
+    raw_json: str,
+) -> bool:
+    with sqlite3.connect(settings.db_path) as connection:
+        cursor = connection.execute(
+            """
+            INSERT OR IGNORE INTO news_items (
+                feed_id, guid, title, link, published_at, summary, raw_json
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?);
+            """,
+            (feed_id, guid, title, link, published_at, summary, raw_json),
+        )
+        connection.commit()
+        return cursor.rowcount > 0
+
+
+def get_latest_news(limit: int = 50) -> list[NewsItem]:
+    with sqlite3.connect(settings.db_path) as connection:
+        rows = connection.execute(
+            """
+            SELECT n.id, n.feed_id, n.guid, n.title, n.link, n.published_at, n.summary, n.raw_json,
+                   n.created_at, f.name
+            FROM news_items n
+            JOIN rss_feeds f ON f.id = n.feed_id
+            ORDER BY n.published_at DESC, n.id DESC
+            LIMIT ?;
+            """,
+            (limit,),
+        ).fetchall()
+
+    return [_row_to_news_item(row) for row in rows]
+
+
 def _fetch_watchlist_row(item_id: int) -> tuple[Any, ...] | None:
     with sqlite3.connect(settings.db_path) as connection:
         return connection.execute(
@@ -380,6 +542,32 @@ def _row_to_watchlist_item(row: tuple[Any, ...]) -> WatchlistItem:
         is_active=bool(row[6]),
         created_at=row[7],
         updated_at=row[8],
+    )
+
+
+def _row_to_rss_feed(row: tuple[Any, ...]) -> RssFeed:
+    return RssFeed(
+        id=row[0],
+        name=row[1],
+        url=row[2],
+        is_active=bool(row[3]),
+        created_at=row[4],
+        updated_at=row[5],
+    )
+
+
+def _row_to_news_item(row: tuple[Any, ...]) -> NewsItem:
+    return NewsItem(
+        id=row[0],
+        feed_id=row[1],
+        guid=row[2],
+        title=row[3],
+        link=row[4],
+        published_at=row[5],
+        summary=row[6],
+        raw_json=row[7],
+        created_at=row[8],
+        feed_name=row[9],
     )
 
 

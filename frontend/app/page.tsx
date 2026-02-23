@@ -8,31 +8,49 @@ type WatchlistItem = {
   notes: string;
 };
 
+type NewsItem = {
+  id: number;
+  title: string;
+  feed_name: string;
+};
+
 const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://127.0.0.1:8080";
 
 export default function DashboardPage() {
   const [watchlistTop, setWatchlistTop] = useState<WatchlistItem[]>([]);
+  const [newsTop, setNewsTop] = useState<NewsItem[]>([]);
 
   useEffect(() => {
-    const loadWatchlist = async () => {
+    const loadData = async () => {
       try {
-        const response = await fetch(`${backendUrl}/api/watchlist`, { cache: "no-store" });
-        if (!response.ok) return;
-        const payload = (await response.json()) as WatchlistItem[];
-        setWatchlistTop(payload.slice(0, 5));
+        const [watchlistRes, newsRes] = await Promise.all([
+          fetch(`${backendUrl}/api/watchlist`, { cache: "no-store" }),
+          fetch(`${backendUrl}/api/news?limit=5`, { cache: "no-store" })
+        ]);
+
+        if (watchlistRes.ok) {
+          const watchlistPayload = (await watchlistRes.json()) as WatchlistItem[];
+          setWatchlistTop(watchlistPayload.slice(0, 5));
+        }
+
+        if (newsRes.ok) {
+          const newsPayload = (await newsRes.json()) as NewsItem[];
+          setNewsTop(newsPayload.slice(0, 5));
+        }
       } catch {
         setWatchlistTop([]);
+        setNewsTop([]);
       }
     };
 
-    loadWatchlist();
+    loadData();
   }, []);
 
   return (
     <main>
       <h1>Orion Trader Dashboard</h1>
       <p>
-        Minimal frontend scaffold. Backend status page: <a href="/status">/status</a> · Settings: <a href="/settings">/settings</a> · Chat: <a href="/chat">/chat</a> · Watchlist: <a href="/watchlist">/watchlist</a>
+        Minimal frontend scaffold. Backend status page: <a href="/status">/status</a> · Settings: <a href="/settings">/settings</a> · Chat: <a href="/chat">/chat</a> · Watchlist: <a href="/watchlist">/watchlist</a> · News: <a href="/news">/news</a>
       </p>
 
       <div className="grid">
@@ -58,7 +76,7 @@ export default function DashboardPage() {
 
         <section className="card">
           <h2>Watchlist (Top 5)</h2>
-          {watchlistTop.length == 0 ? (
+          {watchlistTop.length === 0 ? (
             <p>No active watchlist items.</p>
           ) : (
             <ul>
@@ -69,6 +87,22 @@ export default function DashboardPage() {
               ))}
             </ul>
           )}
+        </section>
+
+        <section className="card">
+          <h2>Latest News</h2>
+          {newsTop.length === 0 ? (
+            <p>No news items yet.</p>
+          ) : (
+            <ul>
+              {newsTop.map((item) => (
+                <li key={item.id}>
+                  <strong>{item.feed_name}</strong> - {item.title}
+                </li>
+              ))}
+            </ul>
+          )}
+          <p><a href="/news">See all news</a></p>
         </section>
       </div>
     </main>

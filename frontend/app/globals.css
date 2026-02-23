@@ -137,3 +137,12 @@ button {
   display: grid;
   gap: 0.8rem;
 }
+
+.feed-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: center;
+  border-top: 1px solid #1f2937;
+  padding: 0.6rem 0;
+}
