@@ -46,3 +46,17 @@
 - Base locale SQLite sur disque (`./data/orion.db`) pour la phase actuelle.
 - Cible ultérieure: disque persistant en environnement déployé.
 - Données prévues: logs, reflections, mémoire Orion.
+
+## Module Settings (Bloc 3)
+
+- Persistance des paramètres applicatifs dans SQLite (`settings` table, clé `app_settings`).
+- API backend:
+  - `GET /api/settings` : retourne la configuration complète.
+  - `PUT /api/settings` : valide puis persiste la configuration complète.
+- Validation appliquée côté backend:
+  - types stricts (bool/int/float/string enum `LIMIT`),
+  - bornes `0..1` pour seuils/cap/divergence,
+  - `max_trades_per_day >= 0`,
+  - `boost_trades_per_day >= max_trades_per_day`.
+- Frontend Next.js:
+  - page `/settings` pour charger/éditer/sauvegarder ces paramètres via `NEXT_PUBLIC_BACKEND_URL`.

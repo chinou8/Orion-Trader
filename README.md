@@ -5,7 +5,7 @@ Monorepo d'initialisation du projet **orion-trader** (fusion Orion Invest + bot 
 ## Structure
 
 - `backend/` : API FastAPI + logique métier future
-- `frontend/` : espace réservé front-end dashboard
+- `frontend/` : dashboard Next.js (TypeScript)
 - `infra/` : scripts d'installation/exécution/tests/lint
 - `docs/` : architecture, DoD, décisions produit/techniques
 
@@ -43,6 +43,57 @@ make run
 - Page minimale: `http://127.0.0.1:8080/`
 - Base SQLite: `./data/orion.db` (créée automatiquement au démarrage)
 
+
+
+## Lancer le frontend (Next.js)
+
+1. Démarrer le backend d'abord (sur `127.0.0.1:8080`) :
+
+```bash
+make run
+```
+
+2. Dans un second terminal, lancer le frontend :
+
+```bash
+cd frontend
+cp .env.local.example .env.local
+npm install
+npm run dev
+```
+
+- Frontend: `http://127.0.0.1:3000/`
+- Statut backend: `http://127.0.0.1:3000/status`
+- Settings: `http://127.0.0.1:3000/settings`
+
+> Sur VM, l'accès UI se fera plus tard via tunnel SSH.
+
+## Déploiement VM Linux (GCP)
+
+Ce flux permet de déployer le backend sur une VM Linux en évitant toute dépendance à un setup local.
+
+```bash
+git clone git@github.com:chinou8/Orion-Trader.git
+cd Orion-Trader
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements-dev.txt
+python -m uvicorn app.main:app --app-dir backend --host 127.0.0.1 --port 8080
+```
+
+- Healthcheck backend: `http://127.0.0.1:8080/health`
+- SQLite: `./data/orion.db` (créée automatiquement)
+
+### Tunnel SSH (exemple)
+
+Depuis votre machine locale vers la VM:
+
+```bash
+ssh -N -L 8080:127.0.0.1:8080 <user>@<vm-ip-ou-dns>
+```
+
+Ensuite, ouvrez `http://127.0.0.1:8080/health` dans votre navigateur local.
+
 ## Tests et lint
 
 ```bash
@@ -66,4 +117,6 @@ Copier `.env.example` vers `.env` puis adapter si nécessaire.
 GitHub Actions (`.github/workflows/ci.yml`) exécute:
 - lint (`ruff`)
 - tests (`pytest`)
-- build léger (`python -m compileall backend`)
+- build léger backend (`python -m compileall backend`)
+- build frontend (`npm install` + `npm run build` dans `frontend/`)
+- note: quand un `package-lock.json` sera disponible (généré sur VM), on repassera à `npm ci`
