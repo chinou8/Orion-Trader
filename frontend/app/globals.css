@@ -77,3 +77,42 @@ button {
   color: white;
   cursor: pointer;
 }
+
+.chat-box {
+  border: 1px solid #1f2937;
+  border-radius: 12px;
+  padding: 1rem;
+  min-height: 180px;
+  margin-bottom: 1rem;
+}
+
+.chat-message {
+  margin-bottom: 0.75rem;
+  padding: 0.6rem;
+  border-radius: 8px;
+}
+
+.chat-user {
+  background: #0f172a;
+}
+
+.chat-orion {
+  background: #111827;
+  border: 1px solid #1f2937;
+}
+
+.chat-form {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.chat-form input {
+  flex: 1;
+  min-width: 220px;
+  padding: 0.5rem;
+  border-radius: 8px;
+  border: 1px solid #334155;
+  background: #0b1220;
+  color: #e5e7eb;
+}

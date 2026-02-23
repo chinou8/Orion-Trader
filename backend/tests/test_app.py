@@ -76,3 +76,33 @@ def test_put_settings_persists_and_get_matches(isolated_db: Path) -> None:
     get_response = client.get("/api/settings")
     assert get_response.status_code == 200
     assert get_response.json() == payload
+
+
+def test_create_thread_and_post_message_and_get_thread(isolated_db: Path) -> None:
+    client = TestClient(app)
+
+    create_response = client.post("/api/chat/thread", json={"title": "Daily checks"})
+    assert create_response.status_code == 200
+    thread_payload = create_response.json()
+    thread_id = thread_payload["thread_id"]
+    assert thread_payload["title"] == "Daily checks"
+
+    message_response = client.post(
+        f"/api/chat/thread/{thread_id}/message",
+        json={"content": "Surveille NVDA et TSLA"},
+    )
+    assert message_response.status_code == 200
+    message_payload = message_response.json()
+    assert message_payload["thread_id"] == thread_id
+    assert message_payload["user_message"]["role"] == "user"
+    assert message_payload["orion_message"]["role"] == "orion"
+    assert message_payload["orion_reply"]["reply_text"]
+    assert message_payload["orion_reply"]["watch_requests"]
+
+    thread_response = client.get(f"/api/chat/thread/{thread_id}")
+    assert thread_response.status_code == 200
+    thread_data = thread_response.json()
+    assert thread_data["thread_id"] == thread_id
+    assert len(thread_data["messages"]) == 2
+    assert thread_data["messages"][0]["role"] == "user"
+    assert thread_data["messages"][1]["role"] == "orion"
