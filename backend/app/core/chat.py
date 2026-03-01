@@ -3,6 +3,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 
+from app.core.proposal import ProposalCreated
 from app.core.watchlist import WatchlistItem
 
 
@@ -31,6 +32,7 @@ class OrionReplyPayload(BaseModel):
     watch_requests: list[str]
     news_brief: list[str]
     market_analysis: dict[str, object] | None
+    proposal_created: ProposalCreated | None
     meta: dict[str, str]
 
 
@@ -58,6 +60,7 @@ def generate_orion_reply(
     user_content: str,
     recent_news: list[str] | None = None,
     market_analysis: dict[str, object] | None = None,
+    proposal_created: ProposalCreated | None = None,
 ) -> OrionReplyPayload:
     normalized = user_content.lower()
     watch_requests: list[str] = []
@@ -78,6 +81,9 @@ def generate_orion_reply(
     if market_analysis is not None:
         recommendations.append("Analyse marché ajoutée en mode tech-only.")
 
+    if proposal_created is not None:
+        recommendations.append("Proposition de trade créée en mode tech-only.")
+
     reply_text = (
         "Orion (tech-only): message reçu. "
         "Je stocke le contexte et prépare les prochaines vérifications techniques."
@@ -89,5 +95,6 @@ def generate_orion_reply(
         watch_requests=watch_requests,
         news_brief=news_brief,
         market_analysis=market_analysis,
+        proposal_created=proposal_created,
         meta={"mode": "tech-only", "timestamp": datetime.now(timezone.utc).isoformat()},
     )

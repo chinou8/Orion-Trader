@@ -7,6 +7,12 @@ from typing import Any
 from app.core.chat import ChatMessage, OrionReplyPayload
 from app.core.config import settings
 from app.core.market import MarketBar
+from app.core.proposal import (
+    TradeProposal,
+    TradeProposalActionRequest,
+    TradeProposalCreateRequest,
+    TradeProposalUpdateRequest,
+)
 from app.core.rss import NewsItem, RssFeed, RssFeedCreateRequest, RssFeedUpdateRequest
 from app.core.trading_settings import TradingSettings, default_trading_settings
 from app.core.watchlist import WatchlistCreateRequest, WatchlistItem, WatchlistUpdateRequest
@@ -138,6 +144,32 @@ def init_db() -> None:
                 source TEXT NOT NULL,
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 UNIQUE(symbol, timeframe, ts, source)
+            );
+            """
+        )
+
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS trade_proposals (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                symbol TEXT NOT NULL,
+                asset_type TEXT NOT NULL CHECK(asset_type IN ('EQUITY', 'ETF', 'BOND')),
+                market TEXT NOT NULL,
+                side TEXT NOT NULL CHECK(side IN ('BUY', 'SELL', 'HOLD')),
+                qty REAL NULL,
+                notional_eur REAL NULL,
+                order_type TEXT NOT NULL DEFAULT 'LIMIT' CHECK(order_type IN ('LIMIT')),
+                limit_price REAL NULL,
+                horizon_window TEXT NOT NULL,
+                thesis_json TEXT NOT NULL,
+                status TEXT NOT NULL CHECK(
+                    status IN ('PENDING', 'APPROVED', 'REJECTED', 'EXECUTED', 'CANCELLED')
+                ),
+                approved_by TEXT NULL,
+                approved_at TEXT NULL,
+                notes TEXT NULL
             );
             """
         )
@@ -603,6 +635,171 @@ def get_active_watchlist_symbols() -> list[str]:
     return [str(row[0]) for row in rows]
 
 
+def list_trade_proposals(status: str | None = None, limit: int = 100) -> list[TradeProposal]:
+    query = (
+        "SELECT id, created_at, updated_at, symbol, asset_type, market, side, qty, notional_eur, "
+        "order_type, limit_price, horizon_window, thesis_json, "
+        "status, approved_by, approved_at, notes "
+        "FROM trade_proposals"
+    )
+    params: list[Any] = []
+    if status is not None:
+        query += " WHERE status = ?"
+        params.append(status)
+    query += " ORDER BY id DESC LIMIT ?"
+    params.append(limit)
+
+    with sqlite3.connect(settings.db_path) as connection:
+        rows = connection.execute(query, tuple(params)).fetchall()
+
+    return [_row_to_trade_proposal(row) for row in rows]
+
+
+def create_trade_proposal(payload: TradeProposalCreateRequest) -> TradeProposal:
+    with sqlite3.connect(settings.db_path) as connection:
+        cursor = connection.execute(
+            """
+            INSERT INTO trade_proposals (
+                symbol, asset_type, market, side, qty, notional_eur, order_type,
+                limit_price, horizon_window, thesis_json, status, notes
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+            """,
+            (
+                payload.symbol.upper(),
+                payload.asset_type,
+                payload.market,
+                payload.side,
+                payload.qty,
+                payload.notional_eur,
+                payload.order_type,
+                payload.limit_price,
+                payload.horizon_window,
+                payload.thesis_json,
+                "PENDING" if payload.asset_type == "BOND" else payload.status,
+                payload.notes,
+            ),
+        )
+        row = connection.execute(
+            "SELECT id, created_at, updated_at, symbol, asset_type, market, side, qty, "
+            "notional_eur, order_type, limit_price, horizon_window, thesis_json, "
+            "status, approved_by, approved_at, notes "
+            "FROM trade_proposals WHERE id = ?;",
+            (cursor.lastrowid,),
+        ).fetchone()
+        connection.commit()
+
+    if row is None:
+        raise RuntimeError("Failed to create proposal")
+    return _row_to_trade_proposal(row)
+
+
+def update_trade_proposal(proposal_id: int, payload: TradeProposalUpdateRequest) -> TradeProposal:
+    current = _fetch_trade_proposal_row(proposal_id)
+    if current is None:
+        raise ValueError("proposal_not_found")
+
+    updates = payload.model_dump(exclude_unset=True)
+    if not updates:
+        return _row_to_trade_proposal(current)
+
+    if current[4] == "BOND" and updates.get("status") not in (None, "PENDING"):
+        raise ValueError("bond_status_locked")
+
+    merged = {
+        "qty": updates.get("qty", current[7]),
+        "limit_price": updates.get("limit_price", current[10]),
+        "notes": updates.get("notes", current[16]),
+        "status": updates.get("status", current[13]),
+    }
+
+    with sqlite3.connect(settings.db_path) as connection:
+        connection.execute(
+            """
+            UPDATE trade_proposals
+            SET qty = ?,
+                limit_price = ?,
+                notes = ?,
+                status = ?,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?;
+            """,
+            (merged["qty"], merged["limit_price"], merged["notes"], merged["status"], proposal_id),
+        )
+        row = _fetch_trade_proposal_row(proposal_id, connection)
+        connection.commit()
+
+    if row is None:
+        raise RuntimeError("Failed to update proposal")
+    return _row_to_trade_proposal(row)
+
+
+def approve_trade_proposal(proposal_id: int, payload: TradeProposalActionRequest) -> TradeProposal:
+    current = _fetch_trade_proposal_row(proposal_id)
+    if current is None:
+        raise ValueError("proposal_not_found")
+
+    with sqlite3.connect(settings.db_path) as connection:
+        connection.execute(
+            """
+            UPDATE trade_proposals
+            SET status = 'APPROVED',
+                approved_by = ?,
+                approved_at = CURRENT_TIMESTAMP,
+                notes = COALESCE(?, notes),
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?;
+            """,
+            (payload.approved_by, payload.notes, proposal_id),
+        )
+        row = _fetch_trade_proposal_row(proposal_id, connection)
+        connection.commit()
+
+    if row is None:
+        raise RuntimeError("Failed to approve proposal")
+    return _row_to_trade_proposal(row)
+
+
+def reject_trade_proposal(proposal_id: int, payload: TradeProposalActionRequest) -> TradeProposal:
+    current = _fetch_trade_proposal_row(proposal_id)
+    if current is None:
+        raise ValueError("proposal_not_found")
+
+    with sqlite3.connect(settings.db_path) as connection:
+        connection.execute(
+            """
+            UPDATE trade_proposals
+            SET status = 'REJECTED',
+                notes = ?,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?;
+            """,
+            (payload.notes, proposal_id),
+        )
+        row = _fetch_trade_proposal_row(proposal_id, connection)
+        connection.commit()
+
+    if row is None:
+        raise RuntimeError("Failed to reject proposal")
+    return _row_to_trade_proposal(row)
+
+
+def _fetch_trade_proposal_row(
+    proposal_id: int,
+    connection: sqlite3.Connection | None = None,
+) -> tuple[Any, ...] | None:
+    query = (
+        "SELECT id, created_at, updated_at, symbol, asset_type, market, side, qty, notional_eur, "
+        "order_type, limit_price, horizon_window, thesis_json, "
+        "status, approved_by, approved_at, notes "
+        "FROM trade_proposals WHERE id = ?;"
+    )
+    if connection is not None:
+        return connection.execute(query, (proposal_id,)).fetchone()
+
+    with sqlite3.connect(settings.db_path) as conn:
+        return conn.execute(query, (proposal_id,)).fetchone()
+
+
 def _fetch_watchlist_row(item_id: int) -> tuple[Any, ...] | None:
     with sqlite3.connect(settings.db_path) as connection:
         return connection.execute(
@@ -675,6 +872,28 @@ def _row_to_market_bar(row: tuple[Any, ...]) -> MarketBar:
         volume=float(row[8]),
         source=row[9],
         created_at=row[10],
+    )
+
+
+def _row_to_trade_proposal(row: tuple[Any, ...]) -> TradeProposal:
+    return TradeProposal(
+        id=row[0],
+        created_at=row[1],
+        updated_at=row[2],
+        symbol=row[3],
+        asset_type=row[4],
+        market=row[5],
+        side=row[6],
+        qty=row[7],
+        notional_eur=row[8],
+        order_type=row[9],
+        limit_price=row[10],
+        horizon_window=row[11],
+        thesis_json=row[12],
+        status=row[13],
+        approved_by=row[14],
+        approved_at=row[15],
+        notes=row[16],
     )
 
 

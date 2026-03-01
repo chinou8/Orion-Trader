@@ -141,3 +141,55 @@ def test_chat_surveille_creates_watchlist_item(isolated_db: Path) -> None:
     assert watchlist_response.status_code == 200
     symbols = [item["symbol"] for item in watchlist_response.json()]
     assert "AIR.PA" in symbols
+
+
+def test_trade_proposal_lifecycle_and_chat_creation(isolated_db: Path) -> None:
+    client = TestClient(app)
+
+    create_response = client.post(
+        "/api/proposals",
+        json={
+            "symbol": "AIR.PA",
+            "asset_type": "EQUITY",
+            "market": "EU",
+            "side": "BUY",
+            "horizon_window": "5-15 jours",
+            "thesis_json": "{}",
+        },
+    )
+    assert create_response.status_code == 200
+    proposal = create_response.json()
+    proposal_id = proposal["id"]
+    assert proposal["status"] == "PENDING"
+
+    list_response = client.get("/api/proposals?status=PENDING&limit=10")
+    assert list_response.status_code == 200
+    pending_ids = [item["id"] for item in list_response.json()]
+    assert proposal_id in pending_ids
+
+    approve_response = client.post(
+        f"/api/proposals/{proposal_id}/approve",
+        json={"approved_by": "qa-user"},
+    )
+    assert approve_response.status_code == 200
+    assert approve_response.json()["status"] == "APPROVED"
+
+    reject_response = client.post(
+        f"/api/proposals/{proposal_id}/reject",
+        json={"notes": "Changed thesis"},
+    )
+    assert reject_response.status_code == 200
+    assert reject_response.json()["status"] == "REJECTED"
+
+    thread_response = client.post("/api/chat/thread", json={"title": "Trade ideas"})
+    assert thread_response.status_code == 200
+    thread_id = thread_response.json()["thread_id"]
+
+    chat_response = client.post(
+        f"/api/chat/thread/{thread_id}/message",
+        json={"content": "propose un trade sur AIR.PA"},
+    )
+    assert chat_response.status_code == 200
+    payload = chat_response.json()
+    assert payload["orion_reply"]["proposal_created"] is not None
+    assert payload["orion_reply"]["proposal_created"]["symbol"] == "AIR.PA"

@@ -22,6 +22,12 @@ type OrionReply = {
     volatility: number | null;
     horizon_hint: string;
   } | null;
+  proposal_created: {
+    id: number;
+    symbol: string;
+    side: string;
+    horizon_window: string;
+  } | null;
   meta: { mode: string; timestamp: string };
 };
 
@@ -57,6 +63,7 @@ export default function ChatPage() {
   const [watchlistCreated, setWatchlistCreated] = useState<WatchlistItem[]>([]);
   const [newsBrief, setNewsBrief] = useState<string[]>([]);
   const [marketAnalysis, setMarketAnalysis] = useState<OrionReply["market_analysis"]>(null);
+  const [proposalCreated, setProposalCreated] = useState<OrionReply["proposal_created"]>(null);
 
   useEffect(() => {
     const initThread = async () => {
@@ -131,6 +138,7 @@ export default function ChatPage() {
       setWatchlistCreated(payload.watchlist_created);
       setNewsBrief(payload.orion_reply.news_brief);
       setMarketAnalysis(payload.orion_reply.market_analysis);
+      setProposalCreated(payload.orion_reply.proposal_created);
       setText("");
       setStatus("Saved");
     } catch (err) {
@@ -181,6 +189,20 @@ export default function ChatPage() {
             <li>Horizon: {marketAnalysis.horizon_hint}</li>
           </ul>
           <p>See market module: <a href="/market">/market</a></p>
+        </section>
+      )}
+
+
+      {proposalCreated && (
+        <section className="card">
+          <h2>Trade proposal created</h2>
+          <ul>
+            <li>ID: {proposalCreated.id}</li>
+            <li>Symbol: {proposalCreated.symbol}</li>
+            <li>Side: {proposalCreated.side}</li>
+            <li>Horizon: {proposalCreated.horizon_window}</li>
+          </ul>
+          <p>Open proposals: <a href="/proposals">/proposals</a></p>
         </section>
       )}
 

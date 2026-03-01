@@ -125,3 +125,19 @@
   - `horizon_hint` basé sur SMA/RSI/volatilité.
 - Intégration Chat Orion (tech-only):
   - requête "analyse <symbol>" ajoute un bloc `market_analysis` (trend, RSI, vol, horizon).
+
+## Module Trade Proposals (Bloc 8)
+
+- Persistance SQLite:
+  - `trade_proposals(id, created_at, updated_at, symbol, asset_type, market, side, qty, notional_eur, order_type, limit_price, horizon_window, thesis_json, status, approved_by, approved_at, notes)`
+- Endpoints API:
+  - `GET /api/proposals?status=...&limit=100`
+  - `POST /api/proposals`
+  - `PUT /api/proposals/{id}`
+  - `POST /api/proposals/{id}/approve`
+  - `POST /api/proposals/{id}/reject`
+- Règles V1:
+  - `order_type=LIMIT` par défaut.
+  - BOND reste `PENDING` tant qu'il n'est pas approuvé explicitement.
+- Intégration Chat Orion (tech-only):
+  - messages `propose un trade sur <symbol>` / `acheter <symbol>` créent une proposition avec `horizon_window` dérivé des indicateurs et exposent `proposal_created` dans la réponse Orion.

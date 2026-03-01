@@ -14,6 +14,13 @@ type NewsItem = {
   feed_name: string;
 };
 
+type Proposal = {
+  id: number;
+  symbol: string;
+  side: string;
+  status: string;
+};
+
 type MarketIndicators = {
   symbol: string;
   sma20: number | null;
@@ -29,13 +36,15 @@ export default function DashboardPage() {
   const [watchlistTop, setWatchlistTop] = useState<WatchlistItem[]>([]);
   const [newsTop, setNewsTop] = useState<NewsItem[]>([]);
   const [marketTop, setMarketTop] = useState<MarketIndicators[]>([]);
+  const [pendingProposals, setPendingProposals] = useState<Proposal[]>([]);
 
   useEffect(() => {
     const loadData = async () => {
       try {
-        const [watchlistRes, newsRes] = await Promise.all([
+        const [watchlistRes, newsRes, proposalsRes] = await Promise.all([
           fetch(`${backendUrl}/api/watchlist`, { cache: "no-store" }),
-          fetch(`${backendUrl}/api/news?limit=5`, { cache: "no-store" })
+          fetch(`${backendUrl}/api/news?limit=5`, { cache: "no-store" }),
+          fetch(`${backendUrl}/api/proposals?status=PENDING&limit=5`, { cache: "no-store" })
         ]);
 
         let watchlistPayload: WatchlistItem[] = [];
@@ -47,6 +56,11 @@ export default function DashboardPage() {
         if (newsRes.ok) {
           const newsPayload = (await newsRes.json()) as NewsItem[];
           setNewsTop(newsPayload.slice(0, 5));
+        }
+
+        if (proposalsRes.ok) {
+          const proposalsPayload = (await proposalsRes.json()) as Proposal[];
+          setPendingProposals(proposalsPayload.slice(0, 5));
         }
 
         const topSymbols = watchlistPayload.slice(0, 3).map((item) => item.symbol);
@@ -65,6 +79,7 @@ export default function DashboardPage() {
         setWatchlistTop([]);
         setNewsTop([]);
         setMarketTop([]);
+        setPendingProposals([]);
       }
     };
 
@@ -75,7 +90,7 @@ export default function DashboardPage() {
     <main>
       <h1>Orion Trader Dashboard</h1>
       <p>
-        Minimal frontend scaffold. Backend status page: <a href="/status">/status</a> · Settings: <a href="/settings">/settings</a> · Chat: <a href="/chat">/chat</a> · Watchlist: <a href="/watchlist">/watchlist</a> · News: <a href="/news">/news</a> · Market: <a href="/market">/market</a>
+        Minimal frontend scaffold. Backend status page: <a href="/status">/status</a> · Settings: <a href="/settings">/settings</a> · Chat: <a href="/chat">/chat</a> · Watchlist: <a href="/watchlist">/watchlist</a> · News: <a href="/news">/news</a> · Market: <a href="/market">/market</a> · Proposals: <a href="/proposals">/proposals</a>
       </p>
 
       <div className="grid">
@@ -128,6 +143,23 @@ export default function DashboardPage() {
             </ul>
           )}
           <p><a href="/news">See all news</a></p>
+        </section>
+
+
+        <section className="card">
+          <h2>Pending Proposals</h2>
+          {pendingProposals.length === 0 ? (
+            <p>No pending proposals.</p>
+          ) : (
+            <ul>
+              {pendingProposals.map((item) => (
+                <li key={item.id}>
+                  <strong>#{item.id}</strong> {item.symbol} — {item.side}
+                </li>
+              ))}
+            </ul>
+          )}
+          <p><a href="/proposals">Open proposals</a></p>
         </section>
 
         <section className="card">

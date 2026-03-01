@@ -33,9 +33,12 @@ from app.storage.database import (
     get_trading_settings,
     get_watchlist_items,
     insert_market_bars,
+    list_trade_proposals,
+    reject_trade_proposal,
     save_trading_settings,
     soft_delete_watchlist_item,
     update_rss_feed,
+    update_trade_proposal,
     update_watchlist_item,
 )
 
@@ -228,6 +231,56 @@ def post_market_fetch_watchlist() -> dict[str, object]:
     return {"count": len(summary), "results": summary}
 
 
+
+
+@router.get("/api/proposals", response_model=list[TradeProposal])
+def get_proposals(
+    status: str | None = None,
+    limit: int = Query(100, ge=1, le=500),
+) -> list[TradeProposal]:
+    return list_trade_proposals(status=status, limit=limit)
+
+
+@router.post("/api/proposals", response_model=TradeProposal)
+def post_proposal(payload: TradeProposalCreateRequest) -> TradeProposal:
+    return create_trade_proposal(payload)
+
+
+@router.put("/api/proposals/{proposal_id}", response_model=TradeProposal)
+def put_proposal(proposal_id: int, payload: TradeProposalUpdateRequest) -> TradeProposal:
+    try:
+        return update_trade_proposal(proposal_id, payload)
+    except ValueError as exc:
+        if str(exc) == "proposal_not_found":
+            raise HTTPException(status_code=404, detail="Proposal not found") from exc
+        if str(exc) == "bond_status_locked":
+            raise HTTPException(
+                status_code=422,
+                detail="Bond proposals cannot change status automatically",
+            ) from exc
+        raise
+
+
+@router.post("/api/proposals/{proposal_id}/approve", response_model=TradeProposal)
+def post_proposal_approve(proposal_id: int, payload: TradeProposalActionRequest) -> TradeProposal:
+    try:
+        return approve_trade_proposal(proposal_id, payload)
+    except ValueError as exc:
+        if str(exc) == "proposal_not_found":
+            raise HTTPException(status_code=404, detail="Proposal not found") from exc
+        raise
+
+
+@router.post("/api/proposals/{proposal_id}/reject", response_model=TradeProposal)
+def post_proposal_reject(proposal_id: int, payload: TradeProposalActionRequest) -> TradeProposal:
+    try:
+        return reject_trade_proposal(proposal_id, payload)
+    except ValueError as exc:
+        if str(exc) == "proposal_not_found":
+            raise HTTPException(status_code=404, detail="Proposal not found") from exc
+        raise
+
+
 @router.post("/api/chat/thread", response_model=ChatThreadCreateResponse)
 def post_chat_thread(payload: ChatThreadCreateRequest) -> ChatThreadCreateResponse:
     thread_id, title = create_chat_thread(payload.title)
@@ -280,10 +333,60 @@ def post_thread_message(thread_id: int, payload: ChatMessageRequest) -> ChatMess
                     "horizon_hint": "pas de données, lance un fetch",
                 }
 
+    if "propose un trade" in lower_text or "acheter" in lower_text:
+        tokens = payload.content.upper().replace(",", " ").split()
+        symbol = next(
+            (
+                t
+                for t in tokens
+                if "." in t
+                or (
+                    t.isalpha()
+                    and t not in {"PROPOSE", "UN", "TRADE", "SUR", "ACHETER"}
+                )
+            ),
+            "",
+        )
+        symbol = symbol.strip()
+        if symbol:
+            closes = get_market_closes(symbol=symbol, timeframe="1d", limit=250)
+            indicators = compute_indicators(symbol, closes)
+            horizon_window = "5-15 jours"
+            if indicators.horizon_hint == "jours":
+                horizon_window = "2-5 jours"
+            elif indicators.horizon_hint == "semaines/mois":
+                horizon_window = "1-3 mois"
+
+            thesis = {
+                "horizon_hint": indicators.horizon_hint,
+                "rsi14": indicators.rsi14,
+                "volatility": indicators.volatility,
+                "news_refs": latest_news_titles[:3],
+            }
+            created = create_trade_proposal(
+                TradeProposalCreateRequest(
+                    symbol=symbol,
+                    asset_type="EQUITY",
+                    market="EU" if symbol.endswith(".PA") else "US",
+                    side="BUY" if "acheter" in lower_text else "HOLD",
+                    order_type="LIMIT",
+                    horizon_window=horizon_window,
+                    thesis_json=json.dumps(thesis),
+                    status="PENDING",
+                )
+            )
+            proposal_created = ProposalCreated(
+                id=created.id,
+                symbol=created.symbol,
+                side=created.side,
+                horizon_window=created.horizon_window,
+            )
+
     orion_reply = generate_orion_reply(
         payload.content,
         recent_news=latest_news_titles,
         market_analysis=market_analysis,
+        proposal_created=proposal_created,
     )
 
     try:
