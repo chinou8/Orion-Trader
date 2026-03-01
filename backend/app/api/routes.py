@@ -12,13 +12,6 @@ from app.core.chat import (
     ChatThreadResponse,
     generate_orion_reply,
 )
-from app.core.proposal import (
-    ProposalCreated,
-    TradeProposal,
-    TradeProposalActionRequest,
-    TradeProposalCreateRequest,
-    TradeProposalUpdateRequest,
-)
 from app.core.rss import NewsItem, RssFeed, RssFeedCreateRequest, RssFeedUpdateRequest
 from app.core.trading_settings import TradingSettings
 from app.core.watchlist import WatchlistCreateRequest, WatchlistItem, WatchlistUpdateRequest
@@ -27,10 +20,8 @@ from app.marketdata.stooq import fetch_stooq_daily
 from app.rss.service import fetch_all_active_feeds
 from app.storage.database import (
     add_chat_exchange,
-    approve_trade_proposal,
     create_chat_thread,
     create_rss_feed,
-    create_trade_proposal,
     create_watchlist_item,
     create_watchlist_items_from_requests,
     get_active_watchlist_symbols,
@@ -312,7 +303,6 @@ def get_thread(thread_id: int) -> ChatThreadResponse:
 def post_thread_message(thread_id: int, payload: ChatMessageRequest) -> ChatMessageResponse:
     latest_news_titles = [item.title for item in get_latest_news(limit=3)]
     market_analysis: dict[str, object] | None = None
-    proposal_created: ProposalCreated | None = None
     lower_text = payload.content.lower()
     if "analyse" in lower_text:
         tokens = payload.content.upper().replace(",", " ").split()
