@@ -39,10 +39,10 @@ export default function ProposalsPage() {
     load(status).catch((err: unknown) => setError(err instanceof Error ? err.message : "Load failed"));
   }, [status]);
 
-  const action = async (id: number, kind: "approve" | "reject" | "execute_simulated") => {
+  const action = async (id: number, kind: "approve" | "reject" | "execute_simulated" | "execute") => {
     setError("");
     try {
-      const endpoint = kind === "execute_simulated" ? `${backendUrl}/api/proposals/${id}/execute_simulated` : `${backendUrl}/api/proposals/${id}/${kind}`;
+      const endpoint = kind === "execute_simulated" ? `${backendUrl}/api/proposals/${id}/execute_simulated` : kind === "execute" ? `${backendUrl}/api/proposals/${id}/execute` : `${backendUrl}/api/proposals/${id}/${kind}`;
       const body = kind === "approve" ? { approved_by: "operator" } : kind === "reject" ? { notes: "Rejected from UI" } : {};
       const res = await fetch(endpoint, {
         method: "POST",
@@ -99,6 +99,14 @@ export default function ProposalsPage() {
                 <div>
                   <button type="button" onClick={() => action(item.id, "approve")}>Approve</button>{" "}
                   <button type="button" onClick={() => action(item.id, "reject")}>Reject</button>
+                  {item.status === "APPROVED" && (item.asset_type === "EQUITY" || item.asset_type === "ETF") ? (
+                    <>
+                      {" "}
+                      <button type="button" onClick={() => action(item.id, "execute")}>
+                        Execute
+                      </button>
+                    </>
+                  ) : null}
                   {item.status === "APPROVED" && (item.asset_type === "EQUITY" || item.asset_type === "ETF") ? (
                     <>
                       {" "}

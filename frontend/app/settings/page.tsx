@@ -13,6 +13,7 @@ type SettingsPayload = {
   divergence_liquid: number;
   divergence_illiquid: number;
   default_order_type_equity: string;
+  execution_mode: "SIMULATED" | "IBKR_PAPER" | "IBKR_LIVE";
 };
 
 const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://127.0.0.1:8080";
@@ -189,6 +190,24 @@ export default function SettingsPage() {
             value={form.default_order_type_equity}
             onChange={(event) => setForm({ ...form, default_order_type_equity: event.target.value })}
           />
+        </label>
+
+
+        <label>
+          execution_mode
+          <select
+            value={form.execution_mode}
+            onChange={(event) =>
+              setForm({
+                ...form,
+                execution_mode: event.target.value as SettingsPayload["execution_mode"]
+              })
+            }
+          >
+            <option value="SIMULATED">SIMULATED</option>
+            <option value="IBKR_PAPER">IBKR_PAPER</option>
+            <option value="IBKR_LIVE">IBKR_LIVE</option>
+          </select>
         </label>
 
         <button type="submit">Save</button>

@@ -54,6 +54,7 @@ def test_get_settings_returns_defaults(isolated_db: Path) -> None:
         "simulator_initial_cash_eur": 10000.0,
         "simulator_fee_per_trade_eur": 1.25,
         "simulator_slippage_bps": 5.0,
+        "execution_mode": "SIMULATED",
     }
 
 
@@ -73,6 +74,7 @@ def test_put_settings_persists_and_get_matches(isolated_db: Path) -> None:
         "simulator_initial_cash_eur": 12000.0,
         "simulator_fee_per_trade_eur": 2.0,
         "simulator_slippage_bps": 7.0,
+        "execution_mode": "SIMULATED",
     }
 
     put_response = client.put("/api/settings", json=payload)
@@ -279,3 +281,79 @@ def test_execute_simulated_creates_trade_portfolio_and_reflection(isolated_db: P
         "pnl_total_eur",
     }
     assert expected_fields.issubset(perf.keys())
+
+
+
+def test_execution_status_and_generic_execute_mode_switch(isolated_db: Path) -> None:
+    client = TestClient(app)
+
+    status_response = client.get("/api/execution/status")
+    assert status_response.status_code == 200
+    status_payload = status_response.json()
+    assert status_payload["mode"] == "SIMULATED"
+
+    insert_market_bars(
+        symbol="AIR.PA",
+        timeframe="1d",
+        source="test",
+        bars=[
+            {
+                "ts": "2026-01-03",
+                "open": 100.0,
+                "high": 101.0,
+                "low": 99.0,
+                "close": 100.0,
+                "volume": 1000.0,
+            }
+        ],
+    )
+
+    proposal_response = client.post(
+        "/api/proposals",
+        json={
+            "symbol": "AIR.PA",
+            "asset_type": "EQUITY",
+            "market": "EU",
+            "side": "BUY",
+            "qty": 1,
+            "horizon_window": "5-15 jours",
+            "thesis_json": "{}",
+        },
+    )
+    assert proposal_response.status_code == 200
+    proposal_id = proposal_response.json()["id"]
+
+    approve_response = client.post(
+        f"/api/proposals/{proposal_id}/approve",
+        json={"approved_by": "qa"},
+    )
+    assert approve_response.status_code == 200
+
+    execute_response = client.post(f"/api/proposals/{proposal_id}/execute")
+    assert execute_response.status_code == 200
+    assert execute_response.json()["mode"] == "SIMULATED"
+
+    current_settings = client.get("/api/settings").json()
+    current_settings["execution_mode"] = "IBKR_PAPER"
+    save_settings = client.put("/api/settings", json=current_settings)
+    assert save_settings.status_code == 200
+
+    proposal2_response = client.post(
+        "/api/proposals",
+        json={
+            "symbol": "AIR.PA",
+            "asset_type": "EQUITY",
+            "market": "EU",
+            "side": "BUY",
+            "qty": 1,
+            "horizon_window": "5-15 jours",
+            "thesis_json": "{}",
+        },
+    )
+    assert proposal2_response.status_code == 200
+    proposal2_id = proposal2_response.json()["id"]
+    client.post(f"/api/proposals/{proposal2_id}/approve", json={"approved_by": "qa"})
+
+    ibkr_execute = client.post(f"/api/proposals/{proposal2_id}/execute")
+    assert ibkr_execute.status_code == 501
+    assert "IBKR not configured" in ibkr_execute.text

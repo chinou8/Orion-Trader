@@ -43,6 +43,10 @@ type PerformanceSummary = {
   pnl_total_eur: number;
 };
 
+type ExecutionStatus = {
+  mode: "SIMULATED" | "IBKR_PAPER" | "IBKR_LIVE";
+};
+
 type MarketIndicators = {
   symbol: string;
   sma20: number | null;
@@ -76,17 +80,19 @@ export default function DashboardPage() {
   const [portfolioState, setPortfolioState] = useState<PortfolioState | null>(null);
   const [equityCurve, setEquityCurve] = useState<EquityCurvePoint[]>([]);
   const [performanceSummary, setPerformanceSummary] = useState<PerformanceSummary | null>(null);
+  const [executionStatus, setExecutionStatus] = useState<ExecutionStatus | null>(null);
 
   useEffect(() => {
     const loadData = async () => {
       try {
-        const [watchlistRes, newsRes, proposalsRes, portfolioRes, curveRes, perfRes] = await Promise.all([
+        const [watchlistRes, newsRes, proposalsRes, portfolioRes, curveRes, perfRes, execRes] = await Promise.all([
           fetch(`${backendUrl}/api/watchlist`, { cache: "no-store" }),
           fetch(`${backendUrl}/api/news?limit=5`, { cache: "no-store" }),
           fetch(`${backendUrl}/api/proposals?status=PENDING&limit=5`, { cache: "no-store" }),
           fetch(`${backendUrl}/api/portfolio`, { cache: "no-store" }),
           fetch(`${backendUrl}/api/portfolio/equity_curve?limit=120`, { cache: "no-store" }),
-          fetch(`${backendUrl}/api/portfolio/performance_summary`, { cache: "no-store" })
+          fetch(`${backendUrl}/api/portfolio/performance_summary`, { cache: "no-store" }),
+          fetch(`${backendUrl}/api/execution/status`, { cache: "no-store" })
         ]);
 
         let watchlistPayload: WatchlistItem[] = [];
@@ -118,6 +124,10 @@ export default function DashboardPage() {
           setPerformanceSummary((await perfRes.json()) as PerformanceSummary);
         }
 
+        if (execRes.ok) {
+          setExecutionStatus((await execRes.json()) as ExecutionStatus);
+        }
+
         const topSymbols = watchlistPayload.slice(0, 3).map((item) => item.symbol);
         const indicatorResponses = await Promise.all(
           topSymbols.map(async (symbol) => {
@@ -138,6 +148,7 @@ export default function DashboardPage() {
         setPortfolioState(null);
         setEquityCurve([]);
         setPerformanceSummary(null);
+        setExecutionStatus(null);
       }
     };
 
@@ -152,6 +163,7 @@ export default function DashboardPage() {
   return (
     <main>
       <h1>Orion Trader Dashboard</h1>
+      <p><strong>Execution mode:</strong> {executionStatus?.mode ?? "unknown"}</p>
       <p>
         Minimal frontend scaffold. Backend status page: <a href="/status">/status</a> · Settings: <a href="/settings">/settings</a> · Chat: <a href="/chat">/chat</a> · Watchlist: <a href="/watchlist">/watchlist</a> · News: <a href="/news">/news</a> · Market: <a href="/market">/market</a> · Proposals: <a href="/proposals">/proposals</a> · Portfolio: <a href="/portfolio">/portfolio</a>
       </p>

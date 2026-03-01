@@ -12,6 +12,7 @@ from app.core.chat import (
     ChatThreadResponse,
     generate_orion_reply,
 )
+from app.core.execution import IbkrExecutionProvider, SimulatorExecutionProvider
 from app.core.proposal import (
     ProposalCreated,
     TradeProposal,
@@ -65,6 +66,13 @@ from app.storage.database import (
 )
 
 router = APIRouter()
+
+
+def _get_execution_provider() -> tuple[str, SimulatorExecutionProvider | IbkrExecutionProvider]:
+    mode = get_trading_settings().execution_mode
+    if mode == "SIMULATED":
+        return mode, SimulatorExecutionProvider()
+    return mode, IbkrExecutionProvider(mode=mode)
 
 
 @router.get("/health")
@@ -304,6 +312,46 @@ def post_proposal_reject(proposal_id: int, payload: TradeProposalActionRequest) 
 
 
 
+
+
+
+@router.get("/api/execution/status")
+def get_execution_status() -> dict[str, object]:
+    mode, provider = _get_execution_provider()
+    return {"mode": mode, "provider_status": provider.status()}
+
+
+@router.post("/api/proposals/{proposal_id}/execute")
+def post_proposal_execute(proposal_id: int) -> dict[str, object]:
+    mode, provider = _get_execution_provider()
+    try:
+        result = provider.execute_proposal(proposal_id)
+    except ValueError as exc:
+        code = str(exc)
+        if code == "proposal_not_found":
+            raise HTTPException(status_code=404, detail="Proposal not found") from exc
+        if code == "proposal_not_approved":
+            raise HTTPException(status_code=422, detail="Proposal must be APPROVED") from exc
+        if code == "unsupported_asset_type":
+            raise HTTPException(status_code=422, detail="Only EQUITY/ETF can be executed") from exc
+        if code == "market_data_missing":
+            raise HTTPException(
+                status_code=422,
+                detail="No market data available for symbol",
+            ) from exc
+        if code == "invalid_qty":
+            raise HTTPException(status_code=422, detail="Proposal qty must be > 0") from exc
+        if code == "ibkr_not_configured":
+            raise HTTPException(
+                status_code=501,
+                detail=(
+                    "IBKR not configured. Keep execution_mode=SIMULATED "
+                    "or configure VM gateway later."
+                ),
+            ) from exc
+        raise
+
+    return {"mode": mode, "result": result.model_dump()}
 
 @router.post("/api/proposals/{proposal_id}/execute_simulated")
 def post_proposal_execute_simulated(proposal_id: int) -> dict[str, object]:

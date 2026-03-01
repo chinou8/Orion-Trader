@@ -176,3 +176,16 @@
 - Frontend:
   - Dashboard `/` affiche une courbe d'equity simplifiée + résumé de performance.
   - `/portfolio` affiche la courbe complète + résumé.
+
+## Module ExecutionProvider (Bloc 11)
+
+- Objectif: abstraire l'exécution avant intégration IBKR réelle.
+- Providers:
+  - `SimulatorExecutionProvider`: exécute via simulateur interne existant.
+  - `IbkrExecutionProvider` (stub): renvoie `IBKR not configured` avec consigne de config VM ultérieure.
+- Settings:
+  - `execution_mode`: `SIMULATED` | `IBKR_PAPER` | `IBKR_LIVE` (default `SIMULATED`).
+- Endpoints API:
+  - `GET /api/execution/status` -> mode courant + état provider.
+  - `POST /api/proposals/{id}/execute` -> route générique via provider actif.
+  - `POST /api/proposals/{id}/execute_simulated` conservé pour compat/debug.
