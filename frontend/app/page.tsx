@@ -21,6 +21,13 @@ type Proposal = {
   status: string;
 };
 
+type PortfolioState = {
+  cash_eur: number;
+  equity_eur: number;
+  unrealized_pnl_eur: number;
+  realized_pnl_eur: number;
+};
+
 type MarketIndicators = {
   symbol: string;
   sma20: number | null;
@@ -37,14 +44,16 @@ export default function DashboardPage() {
   const [newsTop, setNewsTop] = useState<NewsItem[]>([]);
   const [marketTop, setMarketTop] = useState<MarketIndicators[]>([]);
   const [pendingProposals, setPendingProposals] = useState<Proposal[]>([]);
+  const [portfolioState, setPortfolioState] = useState<PortfolioState | null>(null);
 
   useEffect(() => {
     const loadData = async () => {
       try {
-        const [watchlistRes, newsRes, proposalsRes] = await Promise.all([
+        const [watchlistRes, newsRes, proposalsRes, portfolioRes] = await Promise.all([
           fetch(`${backendUrl}/api/watchlist`, { cache: "no-store" }),
           fetch(`${backendUrl}/api/news?limit=5`, { cache: "no-store" }),
-          fetch(`${backendUrl}/api/proposals?status=PENDING&limit=5`, { cache: "no-store" })
+          fetch(`${backendUrl}/api/proposals?status=PENDING&limit=5`, { cache: "no-store" }),
+          fetch(`${backendUrl}/api/portfolio`, { cache: "no-store" })
         ]);
 
         let watchlistPayload: WatchlistItem[] = [];
@@ -61,6 +70,11 @@ export default function DashboardPage() {
         if (proposalsRes.ok) {
           const proposalsPayload = (await proposalsRes.json()) as Proposal[];
           setPendingProposals(proposalsPayload.slice(0, 5));
+        }
+
+        if (portfolioRes.ok) {
+          const portfolioPayload = (await portfolioRes.json()) as { state: PortfolioState };
+          setPortfolioState(portfolioPayload.state);
         }
 
         const topSymbols = watchlistPayload.slice(0, 3).map((item) => item.symbol);
@@ -80,6 +94,7 @@ export default function DashboardPage() {
         setNewsTop([]);
         setMarketTop([]);
         setPendingProposals([]);
+        setPortfolioState(null);
       }
     };
 
@@ -90,7 +105,7 @@ export default function DashboardPage() {
     <main>
       <h1>Orion Trader Dashboard</h1>
       <p>
-        Minimal frontend scaffold. Backend status page: <a href="/status">/status</a> · Settings: <a href="/settings">/settings</a> · Chat: <a href="/chat">/chat</a> · Watchlist: <a href="/watchlist">/watchlist</a> · News: <a href="/news">/news</a> · Market: <a href="/market">/market</a> · Proposals: <a href="/proposals">/proposals</a>
+        Minimal frontend scaffold. Backend status page: <a href="/status">/status</a> · Settings: <a href="/settings">/settings</a> · Chat: <a href="/chat">/chat</a> · Watchlist: <a href="/watchlist">/watchlist</a> · News: <a href="/news">/news</a> · Market: <a href="/market">/market</a> · Proposals: <a href="/proposals">/proposals</a> · Portfolio: <a href="/portfolio">/portfolio</a>
       </p>
 
       <div className="grid">
@@ -160,6 +175,22 @@ export default function DashboardPage() {
             </ul>
           )}
           <p><a href="/proposals">Open proposals</a></p>
+        </section>
+
+
+        <section className="card">
+          <h2>Portfolio Snapshot</h2>
+          {portfolioState ? (
+            <ul>
+              <li>Cash: {portfolioState.cash_eur}</li>
+              <li>Equity: {portfolioState.equity_eur}</li>
+              <li>uPnL: {portfolioState.unrealized_pnl_eur}</li>
+              <li>rPnL: {portfolioState.realized_pnl_eur}</li>
+            </ul>
+          ) : (
+            <p>No portfolio state.</p>
+          )}
+          <p><a href="/portfolio">Open portfolio</a></p>
         </section>
 
         <section className="card">

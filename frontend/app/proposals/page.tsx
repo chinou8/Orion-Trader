@@ -39,13 +39,15 @@ export default function ProposalsPage() {
     load(status).catch((err: unknown) => setError(err instanceof Error ? err.message : "Load failed"));
   }, [status]);
 
-  const action = async (id: number, kind: "approve" | "reject") => {
+  const action = async (id: number, kind: "approve" | "reject" | "execute_simulated") => {
     setError("");
     try {
-      const res = await fetch(`${backendUrl}/api/proposals/${id}/${kind}`, {
+      const endpoint = kind === "execute_simulated" ? `${backendUrl}/api/proposals/${id}/execute_simulated` : `${backendUrl}/api/proposals/${id}/${kind}`;
+      const body = kind === "approve" ? { approved_by: "operator" } : kind === "reject" ? { notes: "Rejected from UI" } : {};
+      const res = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(kind === "approve" ? { approved_by: "operator" } : { notes: "Rejected from UI" })
+        body: JSON.stringify(body)
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       await load(status);
@@ -97,6 +99,14 @@ export default function ProposalsPage() {
                 <div>
                   <button type="button" onClick={() => action(item.id, "approve")}>Approve</button>{" "}
                   <button type="button" onClick={() => action(item.id, "reject")}>Reject</button>
+                  {item.status === "APPROVED" && (item.asset_type === "EQUITY" || item.asset_type === "ETF") ? (
+                    <>
+                      {" "}
+                      <button type="button" onClick={() => action(item.id, "execute_simulated")}>
+                        Execute (Simulated)
+                      </button>
+                    </>
+                  ) : null}
                 </div>
               </article>
             ))}

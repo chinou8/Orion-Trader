@@ -14,6 +14,13 @@ from app.core.proposal import (
     TradeProposalUpdateRequest,
 )
 from app.core.rss import NewsItem, RssFeed, RssFeedCreateRequest, RssFeedUpdateRequest
+from app.core.simulator import (
+    PortfolioResponse,
+    PortfolioState,
+    Position,
+    Reflection,
+    SimulatedTrade,
+)
 from app.core.trading_settings import TradingSettings, default_trading_settings
 from app.core.watchlist import WatchlistCreateRequest, WatchlistItem, WatchlistUpdateRequest
 
@@ -174,6 +181,53 @@ def init_db() -> None:
             """
         )
 
+
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS simulated_trades (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                proposal_id INTEGER NOT NULL,
+                symbol TEXT NOT NULL,
+                side TEXT NOT NULL,
+                qty REAL NOT NULL,
+                price REAL NOT NULL,
+                ts TEXT NOT NULL,
+                fees_eur REAL NOT NULL,
+                slippage_bps REAL NOT NULL,
+                source TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY(proposal_id) REFERENCES trade_proposals(id) ON DELETE CASCADE
+            );
+            """
+        )
+
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS portfolio_state (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                ts TEXT NOT NULL,
+                cash_eur REAL NOT NULL,
+                equity_eur REAL NOT NULL,
+                unrealized_pnl_eur REAL NOT NULL,
+                realized_pnl_eur REAL NOT NULL,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+            """
+        )
+
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS reflections (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                ts TEXT NOT NULL,
+                proposal_id INTEGER NOT NULL,
+                text TEXT NOT NULL,
+                json_payload TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY(proposal_id) REFERENCES trade_proposals(id) ON DELETE CASCADE
+            );
+            """
+        )
         for name, url, is_active in DEFAULT_RSS_FEEDS:
             connection.execute(
                 """
@@ -783,6 +837,277 @@ def reject_trade_proposal(proposal_id: int, payload: TradeProposalActionRequest)
     return _row_to_trade_proposal(row)
 
 
+
+
+def execute_simulated_trade(
+    proposal_id: int,
+) -> tuple[TradeProposal, SimulatedTrade, PortfolioState, Reflection]:
+    proposal_row = _fetch_trade_proposal_row(proposal_id)
+    if proposal_row is None:
+        raise ValueError("proposal_not_found")
+
+    proposal = _row_to_trade_proposal(proposal_row)
+    if proposal.status != "APPROVED":
+        raise ValueError("proposal_not_approved")
+    if proposal.asset_type not in {"EQUITY", "ETF"}:
+        raise ValueError("unsupported_asset_type")
+
+    qty = float(proposal.qty or 1.0)
+    if qty <= 0:
+        raise ValueError("invalid_qty")
+
+    with sqlite3.connect(settings.db_path) as connection:
+        bar_row = connection.execute(
+            "SELECT close, ts FROM market_bars "
+            "WHERE symbol = ? AND timeframe = '1d' "
+            "ORDER BY ts DESC LIMIT 1;",
+            (proposal.symbol.upper(),),
+        ).fetchone()
+        if bar_row is None:
+            raise ValueError("market_data_missing")
+
+        ref_price = float(bar_row[0])
+        ts = str(bar_row[1])
+        slippage_bps = get_trading_settings().simulator_slippage_bps
+        fee = get_trading_settings().simulator_fee_per_trade_eur
+
+        if proposal.side == "BUY":
+            execution_price = ref_price * (1 + (slippage_bps / 10000))
+            cash_delta = -(qty * execution_price) - fee
+        elif proposal.side == "SELL":
+            execution_price = ref_price * (1 - (slippage_bps / 10000))
+            cash_delta = (qty * execution_price) - fee
+        else:
+            execution_price = ref_price
+            cash_delta = -fee
+
+        cursor = connection.execute(
+            """
+            INSERT INTO simulated_trades (
+                proposal_id, symbol, side, qty, price, ts, fees_eur, slippage_bps, source
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'simulator');
+            """,
+            (
+                proposal.id,
+                proposal.symbol,
+                proposal.side,
+                qty,
+                execution_price,
+                ts,
+                fee,
+                slippage_bps,
+            ),
+        )
+
+        connection.execute(
+            """
+            UPDATE trade_proposals
+            SET status = 'EXECUTED',
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?;
+            """,
+            (proposal.id,),
+        )
+
+        state = _compute_portfolio_state(connection, cash_delta)
+
+        reflection_payload = _build_reflection_payload(proposal)
+        reflection_text = reflection_payload["summary"]
+        reflection_cursor = connection.execute(
+            """
+            INSERT INTO reflections (ts, proposal_id, text, json_payload)
+            VALUES (CURRENT_TIMESTAMP, ?, ?, ?);
+            """,
+            (proposal.id, reflection_text, json.dumps(reflection_payload)),
+        )
+
+        trade_row = connection.execute(
+            "SELECT id, proposal_id, symbol, side, qty, price, ts, fees_eur, "
+            "slippage_bps, source, created_at "
+            "FROM simulated_trades WHERE id = ?;",
+            (cursor.lastrowid,),
+        ).fetchone()
+        proposal_row_updated = _fetch_trade_proposal_row(proposal.id, connection)
+        reflection_row = connection.execute(
+            "SELECT id, ts, proposal_id, text, json_payload, created_at "
+            "FROM reflections WHERE id = ?;",
+            (reflection_cursor.lastrowid,),
+        ).fetchone()
+        connection.commit()
+
+    if trade_row is None or proposal_row_updated is None or reflection_row is None:
+        raise RuntimeError("Failed to execute simulated trade")
+
+    return (
+        _row_to_trade_proposal(proposal_row_updated),
+        _row_to_simulated_trade(trade_row),
+        state,
+        _row_to_reflection(reflection_row),
+    )
+
+
+def list_simulated_trades(limit: int = 200) -> list[SimulatedTrade]:
+    with sqlite3.connect(settings.db_path) as connection:
+        rows = connection.execute(
+            "SELECT id, proposal_id, symbol, side, qty, price, ts, fees_eur, "
+            "slippage_bps, source, created_at "
+            "FROM simulated_trades ORDER BY id DESC LIMIT ?;",
+            (limit,),
+        ).fetchall()
+    return [_row_to_simulated_trade(row) for row in rows]
+
+
+def list_reflections(limit: int = 200) -> list[Reflection]:
+    with sqlite3.connect(settings.db_path) as connection:
+        rows = connection.execute(
+            "SELECT id, ts, proposal_id, text, json_payload, created_at "
+            "FROM reflections ORDER BY id DESC LIMIT ?;",
+            (limit,),
+        ).fetchall()
+    return [_row_to_reflection(row) for row in rows]
+
+
+def get_portfolio() -> PortfolioResponse:
+    with sqlite3.connect(settings.db_path) as connection:
+        state = _compute_portfolio_state(connection, cash_delta=0.0, persist=False)
+        positions = _compute_positions(connection)
+    return PortfolioResponse(state=state, positions=positions)
+
+
+def _compute_portfolio_state(
+    connection: sqlite3.Connection,
+    cash_delta: float,
+    persist: bool = True,
+) -> PortfolioState:
+    last_state_row = connection.execute(
+        "SELECT id, ts, cash_eur, equity_eur, unrealized_pnl_eur, realized_pnl_eur, created_at "
+        "FROM portfolio_state ORDER BY id DESC LIMIT 1;"
+    ).fetchone()
+
+    if last_state_row is None:
+        cash = get_trading_settings().simulator_initial_cash_eur
+        realized = 0.0
+    else:
+        cash = float(last_state_row[2])
+        realized = float(last_state_row[5])
+
+    cash += cash_delta
+    positions = _compute_positions(connection)
+    unrealized = sum(p.unrealized_pnl_eur for p in positions)
+    market_value = sum(p.market_value for p in positions)
+    equity = cash + market_value
+
+    if persist:
+        cursor = connection.execute(
+            """
+            INSERT INTO portfolio_state (
+                ts, cash_eur, equity_eur, unrealized_pnl_eur, realized_pnl_eur
+            )
+            VALUES (CURRENT_TIMESTAMP, ?, ?, ?, ?);
+            """,
+            (cash, equity, unrealized, realized),
+        )
+        row = connection.execute(
+            "SELECT id, ts, cash_eur, equity_eur, unrealized_pnl_eur, realized_pnl_eur, created_at "
+            "FROM portfolio_state WHERE id = ?;",
+            (cursor.lastrowid,),
+        ).fetchone()
+        if row is None:
+            raise RuntimeError("Failed to persist portfolio state")
+        return _row_to_portfolio_state(row)
+
+    row = (
+        0,
+        "",
+        cash,
+        equity,
+        unrealized,
+        realized,
+        "",
+    )
+    return _row_to_portfolio_state(row)
+
+
+def _compute_positions(connection: sqlite3.Connection) -> list[Position]:
+    rows = connection.execute(
+        "SELECT symbol, side, qty, price FROM simulated_trades ORDER BY id ASC;"
+    ).fetchall()
+
+    books: dict[str, dict[str, float]] = {}
+    for symbol, side, qty, price in rows:
+        book = books.setdefault(symbol, {"qty": 0.0, "cost": 0.0})
+        q = float(qty)
+        p = float(price)
+        if side == "BUY":
+            book["cost"] += q * p
+            book["qty"] += q
+        elif side == "SELL":
+            if book["qty"] > 0:
+                avg = book["cost"] / book["qty"]
+            else:
+                avg = p
+            book["cost"] -= q * avg
+            book["qty"] -= q
+
+    positions: list[Position] = []
+    for symbol, book in books.items():
+        qty = book["qty"]
+        if qty <= 0:
+            continue
+        avg_price = book["cost"] / qty if qty else 0.0
+        market_row = connection.execute(
+            "SELECT close FROM market_bars "
+            "WHERE symbol = ? AND timeframe = '1d' "
+            "ORDER BY ts DESC LIMIT 1;",
+            (symbol,),
+        ).fetchone()
+        market_price = float(market_row[0]) if market_row else avg_price
+        market_value = qty * market_price
+        unrealized = (market_price - avg_price) * qty
+        positions.append(
+            Position(
+                symbol=symbol,
+                qty=qty,
+                avg_price=avg_price,
+                market_price=market_price,
+                market_value=market_value,
+                unrealized_pnl_eur=unrealized,
+            )
+        )
+
+    return positions
+
+
+def _build_reflection_payload(proposal: TradeProposal) -> dict[str, Any]:
+    try:
+        thesis = json.loads(proposal.thesis_json or "{}")
+    except json.JSONDecodeError:
+        thesis = {}
+
+    horizon = proposal.horizon_window
+    objective_consistency = horizon in {"2-5 jours", "5-15 jours", "1-3 mois", "5-10 jours"}
+    has_indicators = any(k in thesis for k in ["horizon_hint", "rsi14", "volatility"])
+    has_news = bool(thesis.get("news_refs"))
+
+    improvements: list[str] = [
+        "Attendre une confirmation de tendance avant exécution.",
+        "Ajuster le sizing au risque par trade.",
+    ]
+
+    return {
+        "horizon_window": horizon,
+        "objective_2_5_consistent": objective_consistency,
+        "indicators_present": has_indicators,
+        "news_present": has_news,
+        "improvements": improvements,
+        "summary": (
+            f"Reflection for proposal #{proposal.id}: vérifier confirmation, "
+            "sizing et discipline d'exécution."
+        ),
+    }
+
+
 def _fetch_trade_proposal_row(
     proposal_id: int,
     connection: sqlite3.Connection | None = None,
@@ -896,6 +1221,45 @@ def _row_to_trade_proposal(row: tuple[Any, ...]) -> TradeProposal:
         notes=row[16],
     )
 
+
+
+def _row_to_simulated_trade(row: tuple[Any, ...]) -> SimulatedTrade:
+    return SimulatedTrade(
+        id=row[0],
+        proposal_id=row[1],
+        symbol=row[2],
+        side=row[3],
+        qty=float(row[4]),
+        price=float(row[5]),
+        ts=row[6],
+        fees_eur=float(row[7]),
+        slippage_bps=float(row[8]),
+        source=row[9],
+        created_at=row[10],
+    )
+
+
+def _row_to_portfolio_state(row: tuple[Any, ...]) -> PortfolioState:
+    return PortfolioState(
+        id=row[0],
+        ts=row[1],
+        cash_eur=float(row[2]),
+        equity_eur=float(row[3]),
+        unrealized_pnl_eur=float(row[4]),
+        realized_pnl_eur=float(row[5]),
+        created_at=row[6],
+    )
+
+
+def _row_to_reflection(row: tuple[Any, ...]) -> Reflection:
+    return Reflection(
+        id=row[0],
+        ts=row[1],
+        proposal_id=row[2],
+        text=row[3],
+        json_payload=row[4],
+        created_at=row[5],
+    )
 
 def _serialize_settings(trading_settings: TradingSettings) -> str:
     payload: dict[str, Any] = trading_settings.model_dump()

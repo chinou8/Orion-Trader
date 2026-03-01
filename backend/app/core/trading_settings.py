@@ -23,6 +23,9 @@ class TradingSettings(BaseModel):
     divergence_liquid: float = 0.02
     divergence_illiquid: float = 0.05
     default_order_type_equity: Literal["LIMIT"] = "LIMIT"
+    simulator_initial_cash_eur: float = 10000.0
+    simulator_fee_per_trade_eur: float = 1.25
+    simulator_slippage_bps: float = 5.0
 
     @field_validator(
         "boost_threshold_liquid",
@@ -40,6 +43,17 @@ class TradingSettings(BaseModel):
     @field_validator("max_trades_per_day")
     @classmethod
     def validate_max_trades_per_day(cls, value: int) -> int:
+        if value < 0:
+            raise ValueError("must be >= 0")
+        return value
+
+    @field_validator(
+        "simulator_initial_cash_eur",
+        "simulator_fee_per_trade_eur",
+        "simulator_slippage_bps",
+    )
+    @classmethod
+    def validate_non_negative_simulator_values(cls, value: float) -> float:
         if value < 0:
             raise ValueError("must be >= 0")
         return value

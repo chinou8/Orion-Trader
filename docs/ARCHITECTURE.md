@@ -141,3 +141,24 @@
   - BOND reste `PENDING` tant qu'il n'est pas approuvé explicitement.
 - Intégration Chat Orion (tech-only):
   - messages `propose un trade sur <symbol>` / `acheter <symbol>` créent une proposition avec `horizon_window` dérivé des indicateurs et exposent `proposal_created` dans la réponse Orion.
+
+## Module Execution Simulator (Bloc 9)
+
+- Persistance SQLite:
+  - `simulated_trades(id, proposal_id, symbol, side, qty, price, ts, fees_eur, slippage_bps, source, created_at)`
+  - `portfolio_state(id, ts, cash_eur, equity_eur, unrealized_pnl_eur, realized_pnl_eur, created_at)`
+  - `reflections(id, ts, proposal_id, text, json_payload, created_at)`
+- Settings simul:
+  - `simulator_initial_cash_eur` (10000)
+  - `simulator_fee_per_trade_eur` (1.25)
+  - `simulator_slippage_bps` (5)
+- Endpoints API:
+  - `POST /api/proposals/{id}/execute_simulated`
+  - `GET /api/portfolio`
+  - `GET /api/trades?limit=200`
+  - `GET /api/reflections?limit=200`
+- Règles V1:
+  - exécution simulée autorisée uniquement pour proposals `APPROVED` et `asset_type in (EQUITY, ETF)`.
+  - prix de référence = dernier `market_bars.close`.
+  - slippage + fees appliqués, puis proposal mise à `EXECUTED`.
+  - reflection structurée créée après trade (horizon, qualité des données, améliorations).

@@ -12,7 +12,15 @@ from app.core.chat import (
     ChatThreadResponse,
     generate_orion_reply,
 )
+from app.core.proposal import (
+    ProposalCreated,
+    TradeProposal,
+    TradeProposalActionRequest,
+    TradeProposalCreateRequest,
+    TradeProposalUpdateRequest,
+)
 from app.core.rss import NewsItem, RssFeed, RssFeedCreateRequest, RssFeedUpdateRequest
+from app.core.simulator import PortfolioResponse, Reflection, SimulatedTrade
 from app.core.trading_settings import TradingSettings
 from app.core.watchlist import WatchlistCreateRequest, WatchlistItem, WatchlistUpdateRequest
 from app.marketdata.indicators import compute_indicators
@@ -20,10 +28,13 @@ from app.marketdata.stooq import fetch_stooq_daily
 from app.rss.service import fetch_all_active_feeds
 from app.storage.database import (
     add_chat_exchange,
+    approve_trade_proposal,
     create_chat_thread,
     create_rss_feed,
+    create_trade_proposal,
     create_watchlist_item,
     create_watchlist_items_from_requests,
+    execute_simulated_trade,
     get_active_watchlist_symbols,
     get_chat_thread,
     get_latest_news,
@@ -281,6 +292,51 @@ def post_proposal_reject(proposal_id: int, payload: TradeProposalActionRequest) 
         raise
 
 
+
+
+@router.post("/api/proposals/{proposal_id}/execute_simulated")
+def post_proposal_execute_simulated(proposal_id: int) -> dict[str, object]:
+    try:
+        proposal, trade, portfolio_state, reflection = execute_simulated_trade(proposal_id)
+    except ValueError as exc:
+        if str(exc) == "proposal_not_found":
+            raise HTTPException(status_code=404, detail="Proposal not found") from exc
+        if str(exc) == "proposal_not_approved":
+            raise HTTPException(status_code=422, detail="Proposal must be APPROVED") from exc
+        if str(exc) == "unsupported_asset_type":
+            raise HTTPException(status_code=422, detail="Only EQUITY/ETF can be simulated") from exc
+        if str(exc) == "market_data_missing":
+            raise HTTPException(
+                status_code=422,
+                detail="No market data available for symbol",
+            ) from exc
+        if str(exc) == "invalid_qty":
+            raise HTTPException(status_code=422, detail="Proposal qty must be > 0") from exc
+        raise
+
+    return {
+        "proposal": proposal.model_dump(),
+        "trade": trade.model_dump(),
+        "portfolio_state": portfolio_state.model_dump(),
+        "reflection": reflection.model_dump(),
+    }
+
+
+@router.get("/api/portfolio", response_model=PortfolioResponse)
+def get_portfolio_endpoint() -> PortfolioResponse:
+    return get_portfolio()
+
+
+@router.get("/api/trades", response_model=list[SimulatedTrade])
+def get_trades(limit: int = Query(200, ge=1, le=1000)) -> list[SimulatedTrade]:
+    return list_simulated_trades(limit=limit)
+
+
+@router.get("/api/reflections", response_model=list[Reflection])
+def get_reflections(limit: int = Query(200, ge=1, le=1000)) -> list[Reflection]:
+    return list_reflections(limit=limit)
+
+
 @router.post("/api/chat/thread", response_model=ChatThreadCreateResponse)
 def post_chat_thread(payload: ChatThreadCreateRequest) -> ChatThreadCreateResponse:
     thread_id, title = create_chat_thread(payload.title)
@@ -303,6 +359,7 @@ def get_thread(thread_id: int) -> ChatThreadResponse:
 def post_thread_message(thread_id: int, payload: ChatMessageRequest) -> ChatMessageResponse:
     latest_news_titles = [item.title for item in get_latest_news(limit=3)]
     market_analysis: dict[str, object] | None = None
+    proposal_created: ProposalCreated | None = None
     lower_text = payload.content.lower()
     if "analyse" in lower_text:
         tokens = payload.content.upper().replace(",", " ").split()

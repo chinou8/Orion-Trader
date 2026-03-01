@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 from app.core.config import settings
 from app.main import app
-from app.storage.database import init_db
+from app.storage.database import init_db, insert_market_bars
 from fastapi.testclient import TestClient
 
 
@@ -51,6 +51,9 @@ def test_get_settings_returns_defaults(isolated_db: Path) -> None:
         "divergence_liquid": 0.02,
         "divergence_illiquid": 0.05,
         "default_order_type_equity": "LIMIT",
+        "simulator_initial_cash_eur": 10000.0,
+        "simulator_fee_per_trade_eur": 1.25,
+        "simulator_slippage_bps": 5.0,
     }
 
 
@@ -67,6 +70,9 @@ def test_put_settings_persists_and_get_matches(isolated_db: Path) -> None:
         "divergence_liquid": 0.03,
         "divergence_illiquid": 0.06,
         "default_order_type_equity": "LIMIT",
+        "simulator_initial_cash_eur": 12000.0,
+        "simulator_fee_per_trade_eur": 2.0,
+        "simulator_slippage_bps": 7.0,
     }
 
     put_response = client.put("/api/settings", json=payload)
@@ -193,3 +199,66 @@ def test_trade_proposal_lifecycle_and_chat_creation(isolated_db: Path) -> None:
     payload = chat_response.json()
     assert payload["orion_reply"]["proposal_created"] is not None
     assert payload["orion_reply"]["proposal_created"]["symbol"] == "AIR.PA"
+
+
+
+def test_execute_simulated_creates_trade_portfolio_and_reflection(isolated_db: Path) -> None:
+    client = TestClient(app)
+
+    insert_market_bars(
+        symbol="AIR.PA",
+        timeframe="1d",
+        source="test",
+        bars=[
+            {
+                "ts": "2026-01-02",
+                "open": 100.0,
+                "high": 101.0,
+                "low": 99.5,
+                "close": 100.0,
+                "volume": 1000.0,
+            }
+        ],
+    )
+
+    create_response = client.post(
+        "/api/proposals",
+        json={
+            "symbol": "AIR.PA",
+            "asset_type": "EQUITY",
+            "market": "EU",
+            "side": "BUY",
+            "qty": 2,
+            "horizon_window": "5-15 jours",
+            "thesis_json": "{}",
+        },
+    )
+    assert create_response.status_code == 200
+    proposal_id = create_response.json()["id"]
+
+    approve_response = client.post(
+        f"/api/proposals/{proposal_id}/approve",
+        json={"approved_by": "qa-user"},
+    )
+    assert approve_response.status_code == 200
+    assert approve_response.json()["status"] == "APPROVED"
+
+    execute_response = client.post(f"/api/proposals/{proposal_id}/execute_simulated")
+    assert execute_response.status_code == 200
+    body = execute_response.json()
+    assert body["proposal"]["status"] == "EXECUTED"
+
+    trades_response = client.get("/api/trades?limit=10")
+    assert trades_response.status_code == 200
+    assert len(trades_response.json()) >= 1
+
+    portfolio_response = client.get("/api/portfolio")
+    assert portfolio_response.status_code == 200
+    portfolio_body = portfolio_response.json()
+    assert portfolio_body["state"]["equity_eur"] > 0
+
+    reflections_response = client.get("/api/reflections?limit=10")
+    assert reflections_response.status_code == 200
+    reflections = reflections_response.json()
+    assert len(reflections) >= 1
+    assert reflections[0]["proposal_id"] == proposal_id
