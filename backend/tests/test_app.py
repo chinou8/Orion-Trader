@@ -262,3 +262,20 @@ def test_execute_simulated_creates_trade_portfolio_and_reflection(isolated_db: P
     reflections = reflections_response.json()
     assert len(reflections) >= 1
     assert reflections[0]["proposal_id"] == proposal_id
+
+    equity_curve_response = client.get("/api/portfolio/equity_curve?limit=500")
+    assert equity_curve_response.status_code == 200
+    curve = equity_curve_response.json()
+    assert len(curve) >= 1
+    assert "equity_eur" in curve[0]
+
+    performance_response = client.get("/api/portfolio/performance_summary")
+    assert performance_response.status_code == 200
+    perf = performance_response.json()
+    expected_fields = {
+        "current_equity_eur",
+        "performance_since_start_pct",
+        "trades_count",
+        "pnl_total_eur",
+    }
+    assert expected_fields.issubset(perf.keys())

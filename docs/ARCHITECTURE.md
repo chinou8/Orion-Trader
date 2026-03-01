@@ -162,3 +162,17 @@
   - prix de référence = dernier `market_bars.close`.
   - slippage + fees appliqués, puis proposal mise à `EXECUTED`.
   - reflection structurée créée après trade (horizon, qualité des données, améliorations).
+
+## Module Equity Curve & Performance (Bloc 10)
+
+- Endpoints API:
+  - `GET /api/portfolio/equity_curve?limit=500`
+    - retourne la série triée par `ts` avec: `ts`, `equity_eur`, `cash_eur`, `realized_pnl_eur`, `unrealized_pnl_eur`.
+  - `GET /api/portfolio/performance_summary`
+    - retourne `current_equity_eur`, `performance_since_start_pct`, `trades_count`, `pnl_total_eur`.
+- Source des données:
+  - `portfolio_state` alimenté à chaque `execute_simulated`.
+  - `simulated_trades` pour le nombre de trades.
+- Frontend:
+  - Dashboard `/` affiche une courbe d'equity simplifiée + résumé de performance.
+  - `/portfolio` affiche la courbe complète + résumé.

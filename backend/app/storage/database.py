@@ -15,6 +15,8 @@ from app.core.proposal import (
 )
 from app.core.rss import NewsItem, RssFeed, RssFeedCreateRequest, RssFeedUpdateRequest
 from app.core.simulator import (
+    EquityCurvePoint,
+    PerformanceSummary,
     PortfolioResponse,
     PortfolioState,
     Position,
@@ -968,6 +970,68 @@ def list_reflections(limit: int = 200) -> list[Reflection]:
     return [_row_to_reflection(row) for row in rows]
 
 
+
+
+def get_equity_curve(limit: int = 500) -> list[EquityCurvePoint]:
+    with sqlite3.connect(settings.db_path) as connection:
+        rows = connection.execute(
+            """
+            SELECT ts, equity_eur, cash_eur, realized_pnl_eur, unrealized_pnl_eur
+            FROM portfolio_state
+            ORDER BY ts DESC, id DESC
+            LIMIT ?;
+            """,
+            (limit,),
+        ).fetchall()
+
+    points = [
+        EquityCurvePoint(
+            ts=str(row[0]),
+            equity_eur=float(row[1]),
+            cash_eur=float(row[2]),
+            realized_pnl_eur=float(row[3]),
+            unrealized_pnl_eur=float(row[4]),
+        )
+        for row in rows
+    ]
+    return list(reversed(points))
+
+
+def get_performance_summary() -> PerformanceSummary:
+    with sqlite3.connect(settings.db_path) as connection:
+        current = connection.execute(
+            "SELECT equity_eur FROM portfolio_state ORDER BY id DESC LIMIT 1;"
+        ).fetchone()
+        first = connection.execute(
+            "SELECT equity_eur FROM portfolio_state ORDER BY id ASC LIMIT 1;"
+        ).fetchone()
+        trades_row = connection.execute("SELECT COUNT(*) FROM simulated_trades;").fetchone()
+
+    settings_payload = get_trading_settings()
+    current_equity = (
+        float(current[0])
+        if current is not None
+        else settings_payload.simulator_initial_cash_eur
+    )
+    starting_equity = (
+        float(first[0])
+        if first is not None
+        else settings_payload.simulator_initial_cash_eur
+    )
+    trades_count = int(trades_row[0]) if trades_row is not None else 0
+    pnl_total = current_equity - settings_payload.simulator_initial_cash_eur
+
+    if starting_equity > 0:
+        perf_pct = ((current_equity / starting_equity) - 1) * 100
+    else:
+        perf_pct = 0.0
+
+    return PerformanceSummary(
+        current_equity_eur=current_equity,
+        performance_since_start_pct=perf_pct,
+        trades_count=trades_count,
+        pnl_total_eur=pnl_total,
+    )
 def get_portfolio() -> PortfolioResponse:
     with sqlite3.connect(settings.db_path) as connection:
         state = _compute_portfolio_state(connection, cash_delta=0.0, persist=False)

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 type WatchlistItem = {
   id: number;
@@ -28,6 +28,21 @@ type PortfolioState = {
   realized_pnl_eur: number;
 };
 
+type EquityCurvePoint = {
+  ts: string;
+  equity_eur: number;
+  cash_eur: number;
+  realized_pnl_eur: number;
+  unrealized_pnl_eur: number;
+};
+
+type PerformanceSummary = {
+  current_equity_eur: number;
+  performance_since_start_pct: number;
+  trades_count: number;
+  pnl_total_eur: number;
+};
+
 type MarketIndicators = {
   symbol: string;
   sma20: number | null;
@@ -39,21 +54,39 @@ type MarketIndicators = {
 
 const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://127.0.0.1:8080";
 
+function polylinePoints(values: number[], width: number, height: number): string {
+  if (values.length === 0) return "";
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const span = max - min || 1;
+  return values
+    .map((value, index) => {
+      const x = values.length === 1 ? width / 2 : (index / (values.length - 1)) * width;
+      const y = height - ((value - min) / span) * height;
+      return `${x.toFixed(2)},${y.toFixed(2)}`;
+    })
+    .join(" ");
+}
+
 export default function DashboardPage() {
   const [watchlistTop, setWatchlistTop] = useState<WatchlistItem[]>([]);
   const [newsTop, setNewsTop] = useState<NewsItem[]>([]);
   const [marketTop, setMarketTop] = useState<MarketIndicators[]>([]);
   const [pendingProposals, setPendingProposals] = useState<Proposal[]>([]);
   const [portfolioState, setPortfolioState] = useState<PortfolioState | null>(null);
+  const [equityCurve, setEquityCurve] = useState<EquityCurvePoint[]>([]);
+  const [performanceSummary, setPerformanceSummary] = useState<PerformanceSummary | null>(null);
 
   useEffect(() => {
     const loadData = async () => {
       try {
-        const [watchlistRes, newsRes, proposalsRes, portfolioRes] = await Promise.all([
+        const [watchlistRes, newsRes, proposalsRes, portfolioRes, curveRes, perfRes] = await Promise.all([
           fetch(`${backendUrl}/api/watchlist`, { cache: "no-store" }),
           fetch(`${backendUrl}/api/news?limit=5`, { cache: "no-store" }),
           fetch(`${backendUrl}/api/proposals?status=PENDING&limit=5`, { cache: "no-store" }),
-          fetch(`${backendUrl}/api/portfolio`, { cache: "no-store" })
+          fetch(`${backendUrl}/api/portfolio`, { cache: "no-store" }),
+          fetch(`${backendUrl}/api/portfolio/equity_curve?limit=120`, { cache: "no-store" }),
+          fetch(`${backendUrl}/api/portfolio/performance_summary`, { cache: "no-store" })
         ]);
 
         let watchlistPayload: WatchlistItem[] = [];
@@ -77,6 +110,14 @@ export default function DashboardPage() {
           setPortfolioState(portfolioPayload.state);
         }
 
+        if (curveRes.ok) {
+          setEquityCurve((await curveRes.json()) as EquityCurvePoint[]);
+        }
+
+        if (perfRes.ok) {
+          setPerformanceSummary((await perfRes.json()) as PerformanceSummary);
+        }
+
         const topSymbols = watchlistPayload.slice(0, 3).map((item) => item.symbol);
         const indicatorResponses = await Promise.all(
           topSymbols.map(async (symbol) => {
@@ -95,11 +136,18 @@ export default function DashboardPage() {
         setMarketTop([]);
         setPendingProposals([]);
         setPortfolioState(null);
+        setEquityCurve([]);
+        setPerformanceSummary(null);
       }
     };
 
     loadData();
   }, []);
+
+  const equityPolyline = useMemo(
+    () => polylinePoints(equityCurve.map((point) => point.equity_eur), 320, 120),
+    [equityCurve]
+  );
 
   return (
     <main>
@@ -111,7 +159,23 @@ export default function DashboardPage() {
       <div className="grid">
         <section className="card">
           <h2>Equity Curve</h2>
-          <p>Placeholder: chart area for account equity over time.</p>
+          {equityCurve.length < 1 ? (
+            <p>No equity points yet.</p>
+          ) : (
+            <>
+              <svg viewBox="0 0 320 120" width="100%" height="120" role="img" aria-label="Equity curve">
+                <polyline fill="none" stroke="#38bdf8" strokeWidth="2" points={equityPolyline} />
+              </svg>
+              <p>Last equity: {equityCurve[equityCurve.length - 1].equity_eur.toFixed(2)} EUR</p>
+            </>
+          )}
+          {performanceSummary ? (
+            <ul>
+              <li>Perf since start: {performanceSummary.performance_since_start_pct.toFixed(2)}%</li>
+              <li>Trades: {performanceSummary.trades_count}</li>
+              <li>Total PnL: {performanceSummary.pnl_total_eur.toFixed(2)} EUR</li>
+            </ul>
+          ) : null}
         </section>
 
         <section className="card">
@@ -160,7 +224,6 @@ export default function DashboardPage() {
           <p><a href="/news">See all news</a></p>
         </section>
 
-
         <section className="card">
           <h2>Pending Proposals</h2>
           {pendingProposals.length === 0 ? (
@@ -176,7 +239,6 @@ export default function DashboardPage() {
           )}
           <p><a href="/proposals">Open proposals</a></p>
         </section>
-
 
         <section className="card">
           <h2>Portfolio Snapshot</h2>

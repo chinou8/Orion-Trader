@@ -46,3 +46,18 @@ class Reflection(BaseModel):
     text: str
     json_payload: str
     created_at: str
+
+
+class EquityCurvePoint(BaseModel):
+    ts: str
+    equity_eur: float
+    cash_eur: float
+    realized_pnl_eur: float
+    unrealized_pnl_eur: float
+
+
+class PerformanceSummary(BaseModel):
+    current_equity_eur: float
+    performance_since_start_pct: float
+    trades_count: int
+    pnl_total_eur: float

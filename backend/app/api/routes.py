@@ -20,7 +20,13 @@ from app.core.proposal import (
     TradeProposalUpdateRequest,
 )
 from app.core.rss import NewsItem, RssFeed, RssFeedCreateRequest, RssFeedUpdateRequest
-from app.core.simulator import PortfolioResponse, Reflection, SimulatedTrade
+from app.core.simulator import (
+    EquityCurvePoint,
+    PerformanceSummary,
+    PortfolioResponse,
+    Reflection,
+    SimulatedTrade,
+)
 from app.core.trading_settings import TradingSettings
 from app.core.watchlist import WatchlistCreateRequest, WatchlistItem, WatchlistUpdateRequest
 from app.marketdata.indicators import compute_indicators
@@ -37,13 +43,18 @@ from app.storage.database import (
     execute_simulated_trade,
     get_active_watchlist_symbols,
     get_chat_thread,
+    get_equity_curve,
     get_latest_news,
     get_market_bars,
     get_market_closes,
+    get_performance_summary,
+    get_portfolio,
     get_rss_feeds,
     get_trading_settings,
     get_watchlist_items,
     insert_market_bars,
+    list_reflections,
+    list_simulated_trades,
     list_trade_proposals,
     reject_trade_proposal,
     save_trading_settings,
@@ -326,6 +337,17 @@ def post_proposal_execute_simulated(proposal_id: int) -> dict[str, object]:
 def get_portfolio_endpoint() -> PortfolioResponse:
     return get_portfolio()
 
+
+
+
+@router.get("/api/portfolio/equity_curve", response_model=list[EquityCurvePoint])
+def get_portfolio_equity_curve(limit: int = Query(500, ge=1, le=2000)) -> list[EquityCurvePoint]:
+    return get_equity_curve(limit=limit)
+
+
+@router.get("/api/portfolio/performance_summary", response_model=PerformanceSummary)
+def get_portfolio_performance_summary() -> PerformanceSummary:
+    return get_performance_summary()
 
 @router.get("/api/trades", response_model=list[SimulatedTrade])
 def get_trades(limit: int = Query(200, ge=1, le=1000)) -> list[SimulatedTrade]:
