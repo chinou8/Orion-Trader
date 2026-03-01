@@ -1014,6 +1014,27 @@ def get_performance_summary() -> PerformanceSummary:
 
     if baseline_equity > 0:
         perf_pct = (pnl_total / baseline_equity) * 100
+        first = connection.execute(
+            "SELECT equity_eur FROM portfolio_state ORDER BY id ASC LIMIT 1;"
+        ).fetchone()
+        trades_row = connection.execute("SELECT COUNT(*) FROM simulated_trades;").fetchone()
+
+    settings_payload = get_trading_settings()
+    current_equity = (
+        float(current[0])
+        if current is not None
+        else settings_payload.simulator_initial_cash_eur
+    )
+    starting_equity = (
+        float(first[0])
+        if first is not None
+        else settings_payload.simulator_initial_cash_eur
+    )
+    trades_count = int(trades_row[0]) if trades_row is not None else 0
+    pnl_total = current_equity - settings_payload.simulator_initial_cash_eur
+
+    if starting_equity > 0:
+        perf_pct = ((current_equity / starting_equity) - 1) * 100
     else:
         perf_pct = 0.0
 
