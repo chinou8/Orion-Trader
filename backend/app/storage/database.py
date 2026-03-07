@@ -675,12 +675,14 @@ def get_market_closes(symbol: str, timeframe: str = "1d", limit: int = 250) -> l
             SELECT close
             FROM market_bars
             WHERE symbol = ? AND timeframe = ?
-            ORDER BY ts ASC
+            ORDER BY ts DESC
             LIMIT ?;
             """,
             (symbol.upper(), timeframe, limit),
         ).fetchall()
-    return [float(row[0]) for row in rows]
+    closes = [float(row[0]) for row in rows]
+    closes.reverse()
+    return closes
 
 
 def get_active_watchlist_symbols() -> list[str]:
@@ -877,6 +879,17 @@ def execute_simulated_trade(
             execution_price = ref_price * (1 + (slippage_bps / 10000))
             cash_delta = -(qty * execution_price) - fee
         elif proposal.side == "SELL":
+            current_positions = _compute_positions(connection)
+            available_qty = next(
+                (
+                    float(position.qty)
+                    for position in current_positions
+                    if position.symbol == proposal.symbol.upper()
+                ),
+                0.0,
+            )
+            if qty > available_qty:
+                raise ValueError("insufficient_position_qty")
             execution_price = ref_price * (1 - (slippage_bps / 10000))
             cash_delta = (qty * execution_price) - fee
         else:

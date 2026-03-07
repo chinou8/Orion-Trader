@@ -3,7 +3,7 @@ from pathlib import Path
 from app.core.config import settings
 from app.marketdata.indicators import compute_indicators
 from app.marketdata.stooq import parse_stooq_csv
-from app.storage.database import get_market_bars, init_db, insert_market_bars
+from app.storage.database import get_market_bars, get_market_closes, init_db, insert_market_bars
 
 
 def test_parse_stooq_csv_and_insert_bars(tmp_path: Path) -> None:
@@ -102,3 +102,31 @@ def test_compute_indicators_on_known_series() -> None:
     assert indicators.rsi14 is not None
     assert indicators.volatility is not None
     assert indicators.horizon_hint in {"jours", "jours/semaines", "semaines/mois"}
+
+
+def test_get_market_closes_uses_most_recent_window(tmp_path: Path) -> None:
+    original_db = settings.db_path
+    settings.db_path = tmp_path / "market-closes.db"
+    try:
+        init_db()
+        insert_market_bars(
+            symbol="AIR.PA",
+            timeframe="1d",
+            source="test",
+            bars=[
+                {
+                    "ts": f"2026-01-{day:02d}",
+                    "open": float(day),
+                    "high": float(day),
+                    "low": float(day),
+                    "close": float(day),
+                    "volume": 1000.0,
+                }
+                for day in range(1, 11)
+            ],
+        )
+
+        closes = get_market_closes("AIR.PA", timeframe="1d", limit=3)
+        assert closes == [8.0, 9.0, 10.0]
+    finally:
+        settings.db_path = original_db
