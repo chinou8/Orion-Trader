@@ -341,6 +341,11 @@ def post_proposal_execute(proposal_id: int) -> dict[str, object]:
             ) from exc
         if code == "invalid_qty":
             raise HTTPException(status_code=422, detail="Proposal qty must be > 0") from exc
+        if code == "insufficient_position_qty":
+            raise HTTPException(
+                status_code=422,
+                detail="Cannot SELL more than the current held quantity",
+            ) from exc
         if code == "ibkr_not_configured":
             raise HTTPException(
                 status_code=501,
@@ -371,6 +376,11 @@ def post_proposal_execute_simulated(proposal_id: int) -> dict[str, object]:
             ) from exc
         if str(exc) == "invalid_qty":
             raise HTTPException(status_code=422, detail="Proposal qty must be > 0") from exc
+        if str(exc) == "insufficient_position_qty":
+            raise HTTPException(
+                status_code=422,
+                detail="Cannot SELL more than the current held quantity",
+            ) from exc
         raise
 
     return {

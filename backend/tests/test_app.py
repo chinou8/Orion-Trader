@@ -357,3 +357,48 @@ def test_execution_status_and_generic_execute_mode_switch(isolated_db: Path) -> 
     ibkr_execute = client.post(f"/api/proposals/{proposal2_id}/execute")
     assert ibkr_execute.status_code == 501
     assert "IBKR not configured" in ibkr_execute.text
+
+
+def test_execute_simulated_sell_without_holdings_returns_422(isolated_db: Path) -> None:
+    client = TestClient(app)
+
+    insert_market_bars(
+        symbol="AIR.PA",
+        timeframe="1d",
+        source="test",
+        bars=[
+            {
+                "ts": "2026-01-04",
+                "open": 100.0,
+                "high": 101.0,
+                "low": 99.0,
+                "close": 100.0,
+                "volume": 1000.0,
+            }
+        ],
+    )
+
+    create_response = client.post(
+        "/api/proposals",
+        json={
+            "symbol": "AIR.PA",
+            "asset_type": "EQUITY",
+            "market": "EU",
+            "side": "SELL",
+            "qty": 1,
+            "horizon_window": "5-15 jours",
+            "thesis_json": "{}",
+        },
+    )
+    assert create_response.status_code == 200
+    proposal_id = create_response.json()["id"]
+
+    approve_response = client.post(
+        f"/api/proposals/{proposal_id}/approve",
+        json={"approved_by": "qa-user"},
+    )
+    assert approve_response.status_code == 200
+
+    execute_response = client.post(f"/api/proposals/{proposal_id}/execute_simulated")
+    assert execute_response.status_code == 422
+    assert execute_response.json()["detail"] == "Cannot SELL more than the current held quantity"
