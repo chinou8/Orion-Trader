@@ -41,20 +41,25 @@ def _build_market_context(symbols: list[str]) -> str:
 
 
 def _majority_vote(votes: list[AgentVote]) -> tuple[str, str, float | None]:
-    """Return (action, ticker, notional_eur) of the majority or HOLD on tie."""
-    valid = [v for v in votes if v.ticker]
-    if not valid:
+    """Return (action, ticker, notional_eur) of the majority or HOLD on tie.
+
+    Active agents = those with a non-empty ticker (keys not set → ticker="").
+    Majority threshold: >50% of active agents. With only 1 active agent, that
+    agent's vote wins automatically.
+    """
+    active = [v for v in votes if v.ticker]
+    if not active:
         return "HOLD", "", None
 
-    counter: Counter[tuple[str, str]] = Counter((v.action, v.ticker) for v in valid)
+    threshold = max(1, len(active) // 2 + 1)  # strict majority of active agents
+
+    counter: Counter[tuple[str, str]] = Counter((v.action, v.ticker) for v in active)
     (action, ticker), count = counter.most_common(1)[0]
 
-    if count < 2:
-        # No majority — default to HOLD
+    if count < threshold:
         return "HOLD", ticker, None
 
-    # Average notional from agents who voted this (action, ticker)
-    matching = [v for v in valid if v.action == action and v.ticker == ticker]
+    matching = [v for v in active if v.action == action and v.ticker == ticker]
     notionals = [v.notional_eur for v in matching if v.notional_eur]
     avg_notional = sum(notionals) / len(notionals) if notionals else None
 

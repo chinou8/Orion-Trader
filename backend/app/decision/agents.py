@@ -134,7 +134,8 @@ class GPT4oAgent(BaseAgent):
     name = "gpt4o"
 
     def __init__(self) -> None:
-        self._client = openai.OpenAI(api_key=os.environ.get("OPENAI_API_KEY", ""))
+        self._api_key = os.environ.get("OPENAI_API_KEY", "")
+        self._client = openai.OpenAI(api_key=self._api_key) if self._api_key else None
 
     def _call(self, user_prompt: str) -> str:
         resp = self._client.chat.completions.create(
@@ -149,6 +150,9 @@ class GPT4oAgent(BaseAgent):
         return resp.choices[0].message.content or "{}"
 
     def initial_vote(self, market_context: str, news_headlines: str, paris_time: str) -> AgentVote:
+        if not self._api_key:
+            logger.info("GPT4oAgent skipped — OPENAI_API_KEY not set")
+            return self._fallback(1)
         try:
             prompt = _INITIAL_PROMPT_TEMPLATE.format(
                 paris_time=paris_time,
@@ -162,6 +166,8 @@ class GPT4oAgent(BaseAgent):
             return self._fallback(1)
 
     def debate_vote(self, own_vote: AgentVote, peer_votes: list[AgentVote]) -> AgentVote:
+        if not self._api_key:
+            return own_vote
         try:
             prompt = _DEBATE_PROMPT_TEMPLATE.format(
                 own_vote=own_vote.model_dump_json(indent=2),
@@ -180,9 +186,11 @@ class GrokAgent(BaseAgent):
     name = "grok"
 
     def __init__(self) -> None:
-        self._client = openai.OpenAI(
-            api_key=os.environ.get("XAI_API_KEY", ""),
-            base_url="https://api.x.ai/v1",
+        self._api_key = os.environ.get("XAI_API_KEY", "")
+        self._client = (
+            openai.OpenAI(api_key=self._api_key, base_url="https://api.x.ai/v1")
+            if self._api_key
+            else None
         )
 
     def _call(self, user_prompt: str) -> str:
@@ -197,6 +205,9 @@ class GrokAgent(BaseAgent):
         return resp.choices[0].message.content or "{}"
 
     def initial_vote(self, market_context: str, news_headlines: str, paris_time: str) -> AgentVote:
+        if not self._api_key:
+            logger.info("GrokAgent skipped — XAI_API_KEY not set")
+            return self._fallback(1)
         try:
             prompt = _INITIAL_PROMPT_TEMPLATE.format(
                 paris_time=paris_time,
@@ -210,6 +221,8 @@ class GrokAgent(BaseAgent):
             return self._fallback(1)
 
     def debate_vote(self, own_vote: AgentVote, peer_votes: list[AgentVote]) -> AgentVote:
+        if not self._api_key:
+            return own_vote
         try:
             prompt = _DEBATE_PROMPT_TEMPLATE.format(
                 own_vote=own_vote.model_dump_json(indent=2),
