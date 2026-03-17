@@ -30,6 +30,9 @@ from app.core.simulator import (
 )
 from app.core.trading_settings import TradingSettings
 from app.core.watchlist import WatchlistCreateRequest, WatchlistItem, WatchlistUpdateRequest
+from app.decision.committee import run_committee
+from app.decision.models import CommitteeRun
+from app.storage.database import list_committee_runs
 from app.marketdata.indicators import compute_indicators
 from app.marketdata.stooq import fetch_stooq_daily
 from app.rss.service import fetch_all_active_feeds
@@ -415,6 +418,19 @@ def get_trades(limit: int = Query(200, ge=1, le=1000)) -> list[SimulatedTrade]:
 @router.get("/api/reflections", response_model=list[Reflection])
 def get_reflections(limit: int = Query(200, ge=1, le=1000)) -> list[Reflection]:
     return list_reflections(limit=limit)
+
+
+@router.post("/api/committee/run", response_model=CommitteeRun)
+def post_committee_run() -> CommitteeRun:
+    try:
+        return run_committee()
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@router.get("/api/committee/runs", response_model=list[CommitteeRun])
+def get_committee_runs(limit: int = Query(20, ge=1, le=100)) -> list[CommitteeRun]:
+    return list_committee_runs(limit=limit)
 
 
 @router.post("/api/chat/thread", response_model=ChatThreadCreateResponse)

@@ -230,6 +230,22 @@ def init_db() -> None:
             );
             """
         )
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS committee_runs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                run_at TEXT NOT NULL,
+                votes_round1 TEXT NOT NULL,
+                votes_round2 TEXT NOT NULL,
+                winning_action TEXT,
+                winning_ticker TEXT,
+                winning_notional_eur REAL,
+                proposal_id INTEGER,
+                error TEXT
+            );
+            """
+        )
+
         for name, url, is_active in DEFAULT_RSS_FEEDS:
             connection.execute(
                 """
@@ -1353,3 +1369,79 @@ def _row_to_reflection(row: tuple[Any, ...]) -> Reflection:
 def _serialize_settings(trading_settings: TradingSettings) -> str:
     payload: dict[str, Any] = trading_settings.model_dump()
     return json.dumps(payload)
+
+
+# ── Committee runs ────────────────────────────────────────────────────────────
+
+def save_committee_run(
+    run_at: str,
+    votes_round1: list[Any],
+    votes_round2: list[Any],
+    winning_action: str | None,
+    winning_ticker: str | None,
+    winning_notional_eur: float | None,
+    proposal_id: int | None,
+    error: str | None,
+) -> "CommitteeRun":
+    from app.decision.models import AgentVote, CommitteeRun
+
+    r1_json = json.dumps([v.model_dump() if hasattr(v, "model_dump") else v for v in votes_round1])
+    r2_json = json.dumps([v.model_dump() if hasattr(v, "model_dump") else v for v in votes_round2])
+
+    with sqlite3.connect(settings.db_path) as connection:
+        cursor = connection.execute(
+            """
+            INSERT INTO committee_runs
+                (run_at, votes_round1, votes_round2, winning_action,
+                 winning_ticker, winning_notional_eur, proposal_id, error)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (run_at, r1_json, r2_json, winning_action, winning_ticker,
+             winning_notional_eur, proposal_id, error),
+        )
+        row_id = cursor.lastrowid
+        connection.commit()
+
+    return CommitteeRun(
+        id=row_id,  # type: ignore[arg-type]
+        run_at=run_at,
+        votes_round1=[AgentVote(**v) for v in json.loads(r1_json)],
+        votes_round2=[AgentVote(**v) for v in json.loads(r2_json)],
+        winning_action=winning_action,  # type: ignore[arg-type]
+        winning_ticker=winning_ticker,
+        winning_notional_eur=winning_notional_eur,
+        proposal_id=proposal_id,
+        error=error,
+    )
+
+
+def list_committee_runs(limit: int = 20) -> "list[CommitteeRun]":
+    from app.decision.models import AgentVote, CommitteeRun
+
+    with sqlite3.connect(settings.db_path) as connection:
+        rows = connection.execute(
+            """
+            SELECT id, run_at, votes_round1, votes_round2, winning_action,
+                   winning_ticker, winning_notional_eur, proposal_id, error
+            FROM committee_runs
+            ORDER BY id DESC LIMIT ?
+            """,
+            (limit,),
+        ).fetchall()
+
+    results: list[CommitteeRun] = []
+    for row in rows:
+        results.append(
+            CommitteeRun(
+                id=row[0],
+                run_at=row[1],
+                votes_round1=[AgentVote(**v) for v in json.loads(row[2])],
+                votes_round2=[AgentVote(**v) for v in json.loads(row[3])],
+                winning_action=row[4],
+                winning_ticker=row[5],
+                winning_notional_eur=row[6],
+                proposal_id=row[7],
+                error=row[8],
+            )
+        )
+    return results

@@ -4,6 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routes import router
+from app.decision.scheduler import start_scheduler, stop_scheduler
 from app.storage.database import init_db
 
 app = FastAPI(title="Orion Trader API", version="0.1.0")
@@ -26,3 +27,9 @@ app.include_router(router)
 @app.on_event("startup")
 def startup_event() -> None:
     init_db()
+    start_scheduler()
+
+
+@app.on_event("shutdown")
+def shutdown_event() -> None:
+    stop_scheduler()
