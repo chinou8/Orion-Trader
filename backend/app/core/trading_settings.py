@@ -26,7 +26,7 @@ class TradingSettings(BaseModel):
     simulator_initial_cash_eur: float = 10000.0
     simulator_fee_per_trade_eur: float = 1.25
     simulator_slippage_bps: float = 5.0
-    execution_mode: Literal["SIMULATED", "IBKR_PAPER", "IBKR_LIVE"] = "SIMULATED"
+    execution_mode: Literal["SIMULATED", "IBKR_PAPER", "IBKR_LIVE"] = "IBKR_PAPER"
 
     @field_validator(
         "boost_threshold_liquid",

@@ -1,6 +1,8 @@
 from abc import ABC, abstractmethod
 from typing import Literal
 
+from ib_insync import IB
+
 from pydantic import BaseModel
 
 from app.core.simulator import Reflection, SimulatedTrade
@@ -51,14 +53,35 @@ class SimulatorExecutionProvider(ExecutionProvider):
 class IbkrExecutionProvider(ExecutionProvider):
     def __init__(self, mode: Literal["IBKR_PAPER", "IBKR_LIVE"]) -> None:
         self.mode = mode
+        self.ib = IB()
+
+    def connect(self):
+        if not self.ib.isConnected():
+            self.ib.connect("127.0.0.1", 4002, clientId=1)
 
     def execute_proposal(self, proposal_id: int) -> ExecutionResult:
-        raise ValueError("ibkr_not_configured")
+        self.connect()
+
+        return ExecutionResult(
+            mode=self.mode,
+            status="ok",
+            message="IBKR connected",
+            proposal=None,
+            trade=None,
+            portfolio_state=None,
+            reflection=None,
+        )
 
     def status(self) -> dict[str, object]:
+        try:
+            self.connect()
+            connected = self.ib.isConnected()
+        except Exception:
+            connected = False
+
         return {
             "provider": "ibkr",
-            "configured": False,
+            "configured": connected,
             "mode": self.mode,
-            "message": "IBKR provider stub: configure gateway/TWS later on VM.",
+            "message": "IBKR connection active" if connected else "IBKR not connected",
         }
