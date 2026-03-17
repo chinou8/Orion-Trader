@@ -33,9 +33,10 @@ def _build_market_context(symbols: list[str]) -> str:
             continue
         indicators = compute_indicators(symbol, closes)
         trend = "bullish" if (indicators.sma20 or 0) > (indicators.sma50 or 0) else "bearish"
+        rsi = f"{indicators.rsi14:.1f}" if indicators.rsi14 else "N/A"
+        vol = f"{indicators.volatility:.4f}" if indicators.volatility else "N/A"
         lines.append(
-            f"  {symbol}: last_close={closes[-1]:.2f}  RSI14={indicators.rsi14:.1f if indicators.rsi14 else 'N/A'}"
-            f"  trend={trend}  volatility={indicators.volatility:.4f if indicators.volatility else 'N/A'}"
+            f"  {symbol}: last_close={closes[-1]:.2f}  RSI14={rsi}  trend={trend}  volatility={vol}"
         )
     return "\n".join(lines) if lines else "  (no symbols in watchlist)"
 

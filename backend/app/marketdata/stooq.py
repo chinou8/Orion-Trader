@@ -3,6 +3,12 @@ from dataclasses import dataclass
 from io import StringIO
 from urllib.request import urlopen
 
+try:
+    import yfinance as yf
+    _YFINANCE_AVAILABLE = True
+except ImportError:
+    _YFINANCE_AVAILABLE = False
+
 
 @dataclass
 class StooqBar:
@@ -31,7 +37,34 @@ def fetch_stooq_daily(symbol: str) -> tuple[list[StooqBar], str | None, list[str
 
         errors.append(f"{candidate}: empty response")
 
+    # Fallback: yfinance for .PA and other tickers not covered by stooq
+    if _YFINANCE_AVAILABLE:
+        bars = _fetch_yfinance(symbol)
+        if bars:
+            return bars, symbol.upper(), errors, None
+
     return [], None, errors, "no_data"
+
+
+def _fetch_yfinance(symbol: str) -> list[StooqBar]:
+    try:
+        ticker = yf.Ticker(symbol)
+        df = ticker.history(period="2y", interval="1d", auto_adjust=True)
+        if df.empty:
+            return []
+        bars: list[StooqBar] = []
+        for ts, row in df.iterrows():
+            bars.append(StooqBar(
+                ts=str(ts.date()),
+                open=float(row["Open"]),
+                high=float(row["High"]),
+                low=float(row["Low"]),
+                close=float(row["Close"]),
+                volume=float(row.get("Volume") or 0),
+            ))
+        return bars
+    except Exception:
+        return []
 
 
 def stooq_symbol_candidates(symbol: str) -> list[str]:
