@@ -157,7 +157,22 @@ export default function CommitteePage() {
 
   return (
     <main>
-      <h1>AI Committee</h1>
+      <h1>AI Committee <span style={{ fontSize: "0.6em", color: "var(--text-dim)", fontWeight: 400 }}>v1</span></h1>
+
+      {/* ── v1 / v2 banner ── */}
+      <div style={{
+        background: "var(--bg-card2)", border: "1px solid var(--border-bright)",
+        borderRadius: 6, padding: "0.6rem 1rem", marginBottom: "1.25rem",
+        display: "flex", alignItems: "center", gap: "1rem", flexWrap: "wrap",
+        fontSize: "0.8rem",
+      }}>
+        <span style={{ color: "var(--text-dim)" }}>
+          Vous utilisez le <strong style={{ color: "var(--text)" }}>Comité v1</strong> — 3 agents, vote majoritaire en 2 rounds.
+        </span>
+        <a href="/council" style={{ color: "var(--green)", marginLeft: "auto" }}>
+          Essayer Council v2 — 5 agents, vote pondéré, RETEX →
+        </a>
+      </div>
 
       {/* ── Status bar ── */}
       <div style={{ display: "flex", alignItems: "center", gap: "1rem", marginBottom: "1.25rem", flexWrap: "wrap" }}>

@@ -11,6 +11,11 @@ type PerformanceSummary = { current_equity_eur: number; performance_since_start_
 type ExecutionStatus = { mode: string };
 type MarketIndicators = { symbol: string; sma20: number | null; sma50: number | null; rsi14: number | null };
 type AgentCfg = { claude_enabled: boolean; gpt4o_enabled: boolean; grok_enabled: boolean; anthropic_key_set: boolean; openai_key_set: boolean; xai_key_set: boolean };
+type CouncilStatus = {
+  circuit_breaker: { level: string; description: string; position_multiplier: number };
+  market_regime: { regime: string; vix_level: number | null };
+  budgets: { provider: string; balance_eur: number; status: string }[];
+};
 
 const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://127.0.0.1:8080";
 
@@ -45,10 +50,11 @@ export default function DashboardPage() {
   const [perf, setPerf] = useState<PerformanceSummary | null>(null);
   const [exec, setExec] = useState<ExecutionStatus | null>(null);
   const [agentCfg, setAgentCfg] = useState<AgentCfg | null>(null);
+  const [councilStatus, setCouncilStatus] = useState<CouncilStatus | null>(null);
 
   useEffect(() => {
     const load = async () => {
-      const [wRes, nRes, pRes, pfRes, cRes, perfRes, eRes, aRes] = await Promise.allSettled([
+      const [wRes, nRes, pRes, pfRes, cRes, perfRes, eRes, aRes, csRes] = await Promise.allSettled([
         fetch(`${backendUrl}/api/watchlist`),
         fetch(`${backendUrl}/api/news?limit=5`),
         fetch(`${backendUrl}/api/proposals?status=PENDING&limit=5`),
@@ -57,6 +63,7 @@ export default function DashboardPage() {
         fetch(`${backendUrl}/api/portfolio/performance_summary`),
         fetch(`${backendUrl}/api/execution/status`),
         fetch(`${backendUrl}/api/agents/config`),
+        fetch(`${backendUrl}/api/council/v2/status`),
       ]);
 
       let wl: WatchlistItem[] = [];
@@ -74,6 +81,7 @@ export default function DashboardPage() {
       if (perfRes.status === "fulfilled" && perfRes.value.ok) setPerf(await perfRes.value.json());
       if (eRes.status === "fulfilled" && eRes.value.ok) setExec(await eRes.value.json());
       if (aRes.status === "fulfilled" && aRes.value.ok) setAgentCfg(await aRes.value.json());
+      if (csRes.status === "fulfilled" && csRes.value.ok) setCouncilStatus(await csRes.value.json());
 
       const symbols = wl.slice(0, 3).map((i) => i.symbol);
       const indics = await Promise.allSettled(
@@ -130,9 +138,12 @@ export default function DashboardPage() {
           )}
         </div>
 
-        {/* ── Agents ── */}
+        {/* ── Comité v1 ── */}
         <div className="card">
-          <h2>Agents IA</h2>
+          <h2>Comité v1</h2>
+          <div style={{ fontSize: "0.72rem", color: "var(--text-dim)", marginBottom: "0.5rem" }}>
+            3 agents · 2 rounds · vote majoritaire
+          </div>
           {agents.length === 0 ? (
             <p style={{ color: "var(--text-dim)" }}>Chargement…</p>
           ) : (
@@ -155,6 +166,57 @@ export default function DashboardPage() {
             <a href="/committee" style={{ fontSize: "0.8rem" }}>→ Lancer le comité</a>
             {" · "}
             <a href="/settings#agents" style={{ fontSize: "0.8rem" }}>Configurer</a>
+          </div>
+        </div>
+
+        {/* ── Council v2 ── */}
+        <div className="card">
+          <h2>Council v2</h2>
+          <div style={{ fontSize: "0.72rem", color: "var(--text-dim)", marginBottom: "0.5rem" }}>
+            5 agents · vote pondéré · RETEX · circuit breaker
+          </div>
+          {councilStatus ? (
+            <>
+              {/* Circuit breaker */}
+              <div className="toggle-row" style={{ marginBottom: "0.3rem" }}>
+                <span style={{ fontSize: "0.8rem" }}>Circuit Breaker</span>
+                <span style={{
+                  fontWeight: 700, fontSize: "0.8rem",
+                  color: { GREEN: "var(--green)", YELLOW: "var(--yellow)", ORANGE: "#ff8800", RED: "var(--red)" }[councilStatus.circuit_breaker.level] ?? "var(--text-dim)",
+                }}>
+                  {councilStatus.circuit_breaker.level}
+                </span>
+              </div>
+              {/* Regime */}
+              <div className="toggle-row" style={{ marginBottom: "0.3rem" }}>
+                <span style={{ fontSize: "0.8rem" }}>Régime</span>
+                <span style={{ fontSize: "0.8rem", color: "var(--green)" }}>
+                  {councilStatus.market_regime.regime}
+                  {councilStatus.market_regime.vix_level !== null && (
+                    <span style={{ color: "var(--text-dim)", fontWeight: 400 }}> · VIX {councilStatus.market_regime.vix_level.toFixed(1)}</span>
+                  )}
+                </span>
+              </div>
+              {/* Budgets */}
+              {councilStatus.budgets.map((b) => (
+                <div key={b.provider} className="toggle-row">
+                  <span style={{ fontSize: "0.8rem", color: "var(--text-dim)" }}>{b.provider}</span>
+                  <span style={{
+                    fontSize: "0.8rem", fontWeight: 700,
+                    color: b.status === "OK" ? "var(--green)" : b.status === "LOW" ? "var(--yellow)" : "var(--red)",
+                  }}>
+                    €{b.balance_eur?.toFixed(2) ?? "—"}
+                  </span>
+                </div>
+              ))}
+            </>
+          ) : (
+            <p style={{ color: "var(--text-dim)", fontSize: "0.8rem" }}>Chargement…</p>
+          )}
+          <div style={{ marginTop: "0.75rem" }}>
+            <a href="/council" style={{ fontSize: "0.8rem" }}>→ Lancer le conseil</a>
+            {" · "}
+            <a href="/settings#council-keys" style={{ fontSize: "0.8rem" }}>Clés API</a>
           </div>
         </div>
 
