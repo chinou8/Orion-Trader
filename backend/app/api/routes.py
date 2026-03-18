@@ -635,6 +635,11 @@ class CircuitBreakerResetRequest(_BaseModel):
     reason: str = "Manuel via API"
 
 
+class CouncilKeysUpdateRequest(_BaseModel):
+    openrouter_api_key: str | None = None
+    xai_api_key: str | None = None
+
+
 @router.post("/api/council/v2/run")
 async def council_v2_run(payload: CouncilRunRequest) -> dict:
     """Lance une session complète du conseil AI (5 agents + éventuel Master)."""
@@ -721,3 +726,21 @@ def council_v2_cb_reset(payload: CircuitBreakerResetRequest) -> dict:
     """Remet le circuit breaker à GREEN (action manuelle)."""
     from app.council.circuit_breaker import reset
     return reset(reason=payload.reason)
+
+
+@router.get("/api/council/v2/keys")
+def council_v2_get_keys() -> dict:
+    """Retourne le statut des clés API v2 (set ou non, source) sans exposer leur valeur."""
+    from app.council.keys import get_keys_status
+    return get_keys_status()
+
+
+@router.put("/api/council/v2/keys")
+def council_v2_set_keys(payload: CouncilKeysUpdateRequest) -> dict:
+    """Sauvegarde les clés API v2 en DB. Valeur vide = effacement de la clé."""
+    from app.council.keys import set_key, get_keys_status
+    if payload.openrouter_api_key is not None:
+        set_key("openrouter_api_key", payload.openrouter_api_key)
+    if payload.xai_api_key is not None:
+        set_key("xai_api_key", payload.xai_api_key)
+    return get_keys_status()

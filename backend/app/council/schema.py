@@ -316,6 +316,18 @@ def init_council_db(db_path: Path) -> None:
             VALUES ('xai', 5.0, 'OK');
         """)
 
+        # ── 12. council_config — Clés API et config Council v2 ───────────────
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS council_config (
+                key        TEXT PRIMARY KEY,
+                value      TEXT NOT NULL DEFAULT '',
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+        """)
+        # Seed : clés vides (ne remplace pas si déjà renseignées)
+        conn.execute("INSERT OR IGNORE INTO council_config (key, value) VALUES ('openrouter_api_key', '');")
+        conn.execute("INSERT OR IGNORE INTO council_config (key, value) VALUES ('xai_api_key', '');")
+
         conn.commit()
 
-    logger.info("AI Council v2 schema initialized — 11 tables OK")
+    logger.info("AI Council v2 schema initialized — 12 tables OK")

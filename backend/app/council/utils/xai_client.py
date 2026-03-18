@@ -23,11 +23,9 @@ from app.council.config import (
 
 logger = logging.getLogger(__name__)
 
-_XAI_KEY_FALLBACK = "xai-fictitious-key-for-compilation"
-
-
 def _get_api_key() -> str:
-    return os.environ.get("XAI_API_KEY", _XAI_KEY_FALLBACK)
+    from app.council.keys import get_key
+    return get_key("xai_api_key")
 
 
 def _debit_xai_budget(cost_eur: float) -> None:

@@ -16,6 +16,27 @@ type SettingsPayload = {
   execution_mode: "SIMULATED" | "IBKR_PAPER" | "IBKR_LIVE";
 };
 
+type CouncilKeyStatus = { set: boolean; source: "db" | "env" | "none" };
+type CouncilKeysStatus = {
+  openrouter_api_key: CouncilKeyStatus;
+  xai_api_key: CouncilKeyStatus;
+};
+
+const COUNCIL_KEYS = [
+  {
+    id: "openrouter_api_key" as const,
+    label: "OpenRouter API Key",
+    hint: "Utilisée par les agents Fundamentalist, Quant, Contrarian, Finance et Master",
+    placeholder: "sk-or-…",
+  },
+  {
+    id: "xai_api_key" as const,
+    label: "xAI API Key (Grok)",
+    hint: "Utilisée par l'agent News/Sentiment (slot 3)",
+    placeholder: "xai-…",
+  },
+];
+
 type AgentCfg = {
   claude_enabled: boolean;
   gpt4o_enabled: boolean;
@@ -62,6 +83,13 @@ export default function SettingsPage() {
   const [message, setMessage] = useState<string>("");
   const [error, setError] = useState<string>("");
 
+  // Council v2 keys state
+  const [councilKeysStatus, setCouncilKeysStatus] = useState<CouncilKeysStatus | null>(null);
+  const [councilKeyInputs, setCouncilKeyInputs] = useState<Record<string, string>>({});
+  const [councilKeysMsg, setCouncilKeysMsg] = useState("");
+  const [councilKeysErr, setCouncilKeysErr] = useState("");
+  const [showCouncilKeys, setShowCouncilKeys] = useState<Record<string, boolean>>({});
+
   // Agent config state
   const [agentCfg, setAgentCfg] = useState<AgentCfg | null>(null);
   const [agentKeys, setAgentKeys] = useState<Record<string, string>>({});
@@ -78,6 +106,11 @@ export default function SettingsPage() {
     fetch(`${backendUrl}/api/agents/config`)
       .then((r) => r.ok ? r.json() : Promise.reject(r.status))
       .then((d) => setAgentCfg(d as AgentCfg))
+      .catch(() => {});
+
+    fetch(`${backendUrl}/api/council/v2/keys`)
+      .then((r) => r.ok ? r.json() : Promise.reject(r.status))
+      .then((d) => setCouncilKeysStatus(d as CouncilKeysStatus))
       .catch(() => {});
   }, []);
 
@@ -97,6 +130,28 @@ export default function SettingsPage() {
       setMessage("Paramètres sauvegardés");
     } catch (e) {
       setError(String(e));
+    }
+  };
+
+  const saveCouncilKeys = async () => {
+    setCouncilKeysMsg("");
+    setCouncilKeysErr("");
+    try {
+      const payload: Record<string, string> = {};
+      for (const k of COUNCIL_KEYS) {
+        if (councilKeyInputs[k.id] !== undefined) payload[k.id] = councilKeyInputs[k.id];
+      }
+      const r = await fetch(`${backendUrl}/api/council/v2/keys`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!r.ok) throw new Error(`HTTP ${r.status}: ${await r.text()}`);
+      setCouncilKeysStatus(await r.json() as CouncilKeysStatus);
+      setCouncilKeyInputs({});
+      setCouncilKeysMsg("Clés Council v2 sauvegardées");
+    } catch (e) {
+      setCouncilKeysErr(String(e));
     }
   };
 
@@ -141,6 +196,71 @@ export default function SettingsPage() {
   return (
     <main>
       <h1>Settings</h1>
+
+      {/* ── Council v2 API Keys ── */}
+      <section id="council-keys" style={{ marginBottom: "2.5rem" }}>
+        <h2>Clés API — Council v2</h2>
+        <p style={{ color: "var(--text-dim)", fontSize: "0.8rem", marginBottom: "1rem" }}>
+          Ces clés sont stockées en base de données locale (chiffrées à l&apos;application).
+          Priorité : DB → variable d&apos;environnement → clé fictive (compilation).
+        </p>
+
+        <div style={{ display: "grid", gap: "0.75rem", maxWidth: "580px" }}>
+          {COUNCIL_KEYS.map((k) => {
+            const status = councilKeysStatus?.[k.id];
+            const isSet  = status?.set ?? false;
+            const source = status?.source ?? "none";
+            const pending = councilKeyInputs[k.id] ?? "";
+            const revealed = showCouncilKeys[k.id] ?? false;
+
+            return (
+              <div key={k.id} className="card card-accent" style={{ padding: "0.9rem 1rem" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginBottom: "0.5rem" }}>
+                  <span style={{ fontWeight: 700, fontSize: "0.9rem" }}>{k.label}</span>
+                  <span className={`badge ${isSet || pending ? "badge-on" : "badge-off"}`} style={{ marginLeft: "auto" }}>
+                    {isSet || pending ? `✓ Clé (${pending ? "en attente" : source})` : "Non configurée"}
+                  </span>
+                </div>
+                <div style={{ fontSize: "0.75rem", color: "var(--text-dim)", marginBottom: "0.6rem" }}>
+                  {k.hint}
+                </div>
+                <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+                  <input
+                    type={revealed ? "text" : "password"}
+                    value={pending}
+                    placeholder={isSet ? "••••••• (clé existante)" : k.placeholder}
+                    style={{ flex: 1, fontSize: "0.8rem" }}
+                    onChange={(e) => setCouncilKeyInputs({ ...councilKeyInputs, [k.id]: e.target.value })}
+                  />
+                  <button
+                    type="button"
+                    style={{ padding: "0.3rem 0.6rem", fontSize: "0.75rem" }}
+                    onClick={() => setShowCouncilKeys({ ...showCouncilKeys, [k.id]: !revealed })}
+                  >
+                    {revealed ? "Masquer" : "Voir"}
+                  </button>
+                  {isSet && (
+                    <button
+                      type="button"
+                      style={{ padding: "0.3rem 0.6rem", fontSize: "0.75rem", color: "var(--red)", borderColor: "var(--red)" }}
+                      onClick={() => setCouncilKeyInputs({ ...councilKeyInputs, [k.id]: "" })}
+                      title="Effacer la clé"
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+
+          <div style={{ display: "flex", gap: "0.75rem", alignItems: "center", marginTop: "0.25rem" }}>
+            <button type="button" onClick={saveCouncilKeys}>Sauvegarder les clés v2</button>
+            {councilKeysMsg && <span className="status-ok" style={{ fontSize: "0.8rem" }}>{councilKeysMsg}</span>}
+            {councilKeysErr && <span className="status-ko" style={{ fontSize: "0.8rem" }}>{councilKeysErr}</span>}
+          </div>
+        </div>
+      </section>
 
       {/* ── AI Agents ── */}
       <section id="agents" style={{ marginBottom: "2.5rem" }}>

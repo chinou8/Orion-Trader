@@ -25,12 +25,9 @@ from app.council.config import (
 
 logger = logging.getLogger(__name__)
 
-# Clé fictive pour compilation — remplacée par la vraie clé via .env
-_OPENROUTER_KEY_FALLBACK = "sk-or-fictitious-key-for-compilation"
-
-
 def _get_api_key() -> str:
-    return os.environ.get("OPENROUTER_API_KEY", _OPENROUTER_KEY_FALLBACK)
+    from app.council.keys import get_key
+    return get_key("openrouter_api_key")
 
 
 def _debit_budget(cost_eur: float) -> None:
