@@ -640,6 +640,11 @@ class CouncilKeysUpdateRequest(_BaseModel):
     xai_api_key: str | None = None
 
 
+class AgentModelUpdateRequest(_BaseModel):
+    # slot → model string (vide = retour au modèle par défaut)
+    models: dict[str, str]
+
+
 @router.post("/api/council/v2/run")
 async def council_v2_run(payload: CouncilRunRequest) -> dict:
     """Lance une session complète du conseil AI (5 agents + éventuel Master)."""
@@ -726,6 +731,22 @@ def council_v2_cb_reset(payload: CircuitBreakerResetRequest) -> dict:
     """Remet le circuit breaker à GREEN (action manuelle)."""
     from app.council.circuit_breaker import reset
     return reset(reason=payload.reason)
+
+
+@router.get("/api/council/v2/agents")
+def council_v2_get_agents() -> dict:
+    """Retourne les modèles actifs pour chaque agent (slot → modèle courant/défaut)."""
+    from app.council.keys import get_agent_models
+    return get_agent_models()
+
+
+@router.put("/api/council/v2/agents")
+def council_v2_set_agents(payload: AgentModelUpdateRequest) -> dict:
+    """Sauvegarde les modèles choisis pour chaque slot. Valeur vide = retour au défaut."""
+    from app.council.keys import set_agent_model, get_agent_models
+    for slot, model in payload.models.items():
+        set_agent_model(slot, model)
+    return get_agent_models()
 
 
 @router.get("/api/council/v2/keys")

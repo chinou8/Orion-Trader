@@ -37,6 +37,41 @@ const COUNCIL_KEYS = [
   },
 ];
 
+// Modèles suggérés par provider (liste non exhaustive, l'utilisateur peut taper librement)
+const SUGGESTED_MODELS: Record<string, string[]> = {
+  slot_1_fundamentalist: ["anthropic/claude-sonnet-4-5", "anthropic/claude-opus-4", "meta-llama/llama-3.3-70b-instruct"],
+  slot_2_quant:          ["mistralai/magistral-medium", "mistralai/mistral-large-latest", "meta-llama/llama-3.3-70b-instruct"],
+  slot_3_news:           ["x-ai/grok-3", "meta-llama/llama-3.3-70b-instruct"],
+  slot_4_contrarian:     ["openai/gpt-4o", "qwen/qwen3-235b-a22b", "meta-llama/llama-3.3-70b-instruct"],
+  slot_5_finance:        ["mistralai/mistral-large-latest", "openai/gpt-4o-mini", "meta-llama/llama-3.3-70b-instruct"],
+  master:                ["anthropic/claude-opus-4", "anthropic/claude-sonnet-4-5", "meta-llama/llama-3.3-70b-instruct"],
+};
+
+const SLOT_LABELS: Record<string, string> = {
+  slot_1_fundamentalist: "Fundamentalist",
+  slot_2_quant:          "Quant",
+  slot_3_news:           "News / Sentiment",
+  slot_4_contrarian:     "Contrarian",
+  slot_5_finance:        "Finance",
+  master:                "Master (arbitrage)",
+};
+
+const SLOT_HINTS: Record<string, string> = {
+  slot_1_fundamentalist: "Analyse fondamentale — via OpenRouter",
+  slot_2_quant:          "Analyse quantitative — via OpenRouter",
+  slot_3_news:           "Actualités & sentiment — via xAI (Grok natif) ou OpenRouter",
+  slot_4_contrarian:     "Vision contrariante — via OpenRouter",
+  slot_5_finance:        "Analyse financière macro — via OpenRouter",
+  master:                "Arbitrage 3/2 — appelé uniquement si vote serré",
+};
+
+type AgentModelInfo = {
+  name: string;
+  model_current: string;
+  model_default: string;
+  customized: boolean;
+};
+
 const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://127.0.0.1:8080";
 
 export default function SettingsPage() {
@@ -50,6 +85,11 @@ export default function SettingsPage() {
   const [councilKeysErr, setCouncilKeysErr] = useState("");
   const [showCouncilKeys, setShowCouncilKeys] = useState<Record<string, boolean>>({});
 
+  const [agentModels, setAgentModels] = useState<Record<string, AgentModelInfo>>({});
+  const [modelInputs, setModelInputs] = useState<Record<string, string>>({});
+  const [agentModelsMsg, setAgentModelsMsg] = useState("");
+  const [agentModelsErr, setAgentModelsErr] = useState("");
+
   useEffect(() => {
     fetch(`${backendUrl}/api/settings`)
       .then((r) => r.ok ? r.json() : Promise.reject(r.status))
@@ -59,6 +99,11 @@ export default function SettingsPage() {
     fetch(`${backendUrl}/api/council/v2/keys`)
       .then((r) => r.ok ? r.json() : Promise.reject(r.status))
       .then((d) => setCouncilKeysStatus(d as CouncilKeysStatus))
+      .catch(() => {});
+
+    fetch(`${backendUrl}/api/council/v2/agents`)
+      .then((r) => r.ok ? r.json() : Promise.reject(r.status))
+      .then((d) => setAgentModels(d as Record<string, AgentModelInfo>))
       .catch(() => {});
   }, []);
 
@@ -100,6 +145,24 @@ export default function SettingsPage() {
       setCouncilKeysMsg("Clés sauvegardées");
     } catch (e) {
       setCouncilKeysErr(String(e));
+    }
+  };
+
+  const saveAgentModels = async () => {
+    setAgentModelsMsg("");
+    setAgentModelsErr("");
+    try {
+      const r = await fetch(`${backendUrl}/api/council/v2/agents`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ models: modelInputs }),
+      });
+      if (!r.ok) throw new Error(`HTTP ${r.status}: ${await r.text()}`);
+      setAgentModels(await r.json() as Record<string, AgentModelInfo>);
+      setModelInputs({});
+      setAgentModelsMsg("Modèles sauvegardés");
+    } catch (e) {
+      setAgentModelsErr(String(e));
     }
   };
 
@@ -176,6 +239,74 @@ export default function SettingsPage() {
             <button type="button" onClick={saveCouncilKeys}>Sauvegarder les clés</button>
             {councilKeysMsg && <span className="status-ok" style={{ fontSize: "0.8rem" }}>{councilKeysMsg}</span>}
             {councilKeysErr && <span className="status-ko" style={{ fontSize: "0.8rem" }}>{councilKeysErr}</span>}
+          </div>
+        </div>
+      </section>
+
+      {/* ── Agents Council v2 ── */}
+      <section id="agents" style={{ marginBottom: "2.5rem" }}>
+        <h2>Agents — Council v2</h2>
+        <p style={{ color: "var(--text-dim)", fontSize: "0.8rem", marginBottom: "1rem" }}>
+          Modèle IA de chaque agent. Sélectionnez dans la liste ou saisissez un identifiant OpenRouter.
+          Laissez vide pour revenir au modèle par défaut.
+        </p>
+
+        <div style={{ display: "grid", gap: "0.75rem", maxWidth: "580px" }}>
+          {Object.entries(SLOT_LABELS).map(([slot, label]) => {
+            const info    = agentModels[slot];
+            const current = modelInputs[slot] ?? info?.model_current ?? "";
+            const isDefault = !info?.customized && !modelInputs[slot];
+
+            return (
+              <div key={slot} className="card card-accent" style={{ padding: "0.9rem 1rem" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginBottom: "0.4rem" }}>
+                  <span style={{ fontWeight: 700, fontSize: "0.9rem" }}>{label}</span>
+                  {info?.customized && !modelInputs[slot] ? (
+                    <span className="badge badge-on" style={{ marginLeft: "auto" }}>Personnalisé</span>
+                  ) : (
+                    <span className="badge badge-off" style={{ marginLeft: "auto" }}>Défaut</span>
+                  )}
+                </div>
+                <div style={{ fontSize: "0.72rem", color: "var(--text-dim)", marginBottom: "0.6rem" }}>
+                  {SLOT_HINTS[slot]}
+                  {isDefault && info && (
+                    <span style={{ marginLeft: 6, color: "var(--green)" }}>({info.model_default})</span>
+                  )}
+                </div>
+                <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+                  <input
+                    list={`models-${slot}`}
+                    value={current}
+                    placeholder={info?.model_default ?? "provider/model-name"}
+                    style={{ flex: 1, fontSize: "0.8rem" }}
+                    onChange={(e) => setModelInputs({ ...modelInputs, [slot]: e.target.value })}
+                  />
+                  <datalist id={`models-${slot}`}>
+                    {(SUGGESTED_MODELS[slot] ?? []).map((m) => (
+                      <option key={m} value={m} />
+                    ))}
+                  </datalist>
+                  {(modelInputs[slot] || info?.customized) && (
+                    <button
+                      type="button"
+                      style={{ padding: "0.3rem 0.6rem", fontSize: "0.75rem", color: "var(--text-dim)", borderColor: "var(--border)" }}
+                      onClick={() => {
+                        setModelInputs({ ...modelInputs, [slot]: "" });
+                      }}
+                      title="Revenir au modèle par défaut"
+                    >
+                      ↺
+                    </button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+
+          <div style={{ display: "flex", gap: "0.75rem", alignItems: "center", marginTop: "0.25rem" }}>
+            <button type="button" onClick={saveAgentModels}>Sauvegarder les modèles</button>
+            {agentModelsMsg && <span className="status-ok" style={{ fontSize: "0.8rem" }}>{agentModelsMsg}</span>}
+            {agentModelsErr && <span className="status-ko" style={{ fontSize: "0.8rem" }}>{agentModelsErr}</span>}
           </div>
         </div>
       </section>

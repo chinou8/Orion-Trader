@@ -462,7 +462,8 @@ async def _call_master(
     retex_context: str,
 ) -> str:
     """Convoque le Master pour trancher un vote 3/2 incertain."""
-    master_model    = COUNCIL_CONFIG["master"]
+    from app.council.keys import get_model_for_slot
+    master_model    = get_model_for_slot("master")
     master_fallback = COUNCIL_FALLBACK_CONFIG["master"]
 
     agents_summary = "\n\n".join(
@@ -668,7 +669,8 @@ async def run_council(
         "slot_4_contrarian",
         "slot_5_finance",
     ]:
-        model          = COUNCIL_CONFIG[slot]
+        from app.council.keys import get_model_for_slot
+        model          = get_model_for_slot(slot)
         fallback_model = COUNCIL_FALLBACK_CONFIG[slot]
         retex_ctx      = _get_retex_context(slot, ticker)
 

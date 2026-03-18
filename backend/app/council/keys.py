@@ -92,3 +92,38 @@ def _read_db(name: str) -> str:
         return row[0] if row and row[0] else ""
     except sqlite3.Error:
         return ""
+
+
+# ── Gestion des modèles agents ────────────────────────────────────────────────
+
+def get_agent_models() -> dict:
+    """
+    Retourne les modèles actifs pour chaque slot.
+    Priorité : DB → COUNCIL_CONFIG par défaut.
+    """
+    from app.council.config import COUNCIL_CONFIG, AGENT_NAMES
+    result = {}
+    for slot, default_model in COUNCIL_CONFIG.items():
+        db_val = _read_db(f"model_{slot}")
+        result[slot] = {
+            "name":          AGENT_NAMES.get(slot, slot),
+            "model_current": db_val if db_val else default_model,
+            "model_default": default_model,
+            "customized":    bool(db_val and db_val != default_model),
+        }
+    return result
+
+
+def set_agent_model(slot: str, model: str) -> None:
+    """Sauvegarde le modèle choisi pour un slot (vide = retour au défaut)."""
+    from app.council.config import COUNCIL_CONFIG
+    if slot not in COUNCIL_CONFIG:
+        raise ValueError(f"Slot inconnu : {slot}")
+    set_key(f"model_{slot}", model)
+
+
+def get_model_for_slot(slot: str) -> str:
+    """Retourne le modèle actif pour un slot (utilisé par ai_council.py)."""
+    from app.council.config import COUNCIL_CONFIG
+    db_val = _read_db(f"model_{slot}")
+    return db_val if db_val else COUNCIL_CONFIG.get(slot, "")
