@@ -616,3 +616,108 @@ def post_thread_message(thread_id: int, payload: ChatMessageRequest) -> ChatMess
         orion_reply=stored_orion_reply,
         watchlist_created=watchlist_created,
     )
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# AI Council v2 — endpoints
+# ═══════════════════════════════════════════════════════════════════════════════
+
+from pydantic import BaseModel as _BaseModel
+
+
+class CouncilRunRequest(_BaseModel):
+    ticker: str
+    signal_type: str = "MOMENTUM"          # MOMENTUM / BREAKOUT / NEWS_HIGH / FUNDAMENTAL
+    watchlist_tickers: list[str] = []
+
+
+class CircuitBreakerResetRequest(_BaseModel):
+    reason: str = "Manuel via API"
+
+
+@router.post("/api/council/v2/run")
+async def council_v2_run(payload: CouncilRunRequest) -> dict:
+    """Lance une session complète du conseil AI (5 agents + éventuel Master)."""
+    from app.council.ai_council import run_council
+    result = await run_council(
+        ticker=payload.ticker.upper(),
+        signal_type=payload.signal_type,
+        watchlist_tickers=[t.upper() for t in payload.watchlist_tickers],
+    )
+    # Convertir dataclass → dict sérialisable
+    import dataclasses
+    return dataclasses.asdict(result)
+
+
+@router.get("/api/council/v2/status")
+async def council_v2_status() -> dict:
+    """Retourne le statut global : circuit breaker + budgets IA + régime marché."""
+    from app.council.circuit_breaker import get_status, get_position_multiplier
+    from app.council.market_regime import get_cached_context
+    from app.council.utils.openrouter import get_budget_status as or_budget
+    from app.council.utils.xai_client import get_budget_status as xai_budget
+
+    cb = get_status()
+    regime_ctx = get_cached_context()
+    or_b = await or_budget()
+    xai_b = await xai_budget()
+
+    return {
+        "circuit_breaker": {
+            **cb,
+            "position_multiplier": get_position_multiplier(),
+        },
+        "market_regime": {
+            "regime":       regime_ctx.get("regime", "UNKNOWN"),
+            "vix_level":    regime_ctx.get("vix_level"),
+            "sp500_trend":  regime_ctx.get("sp500_vs_ema200"),
+            "macro_events": regime_ctx.get("macro_events", []),
+            "date":         regime_ctx.get("date"),
+        },
+        "budgets": [or_b, xai_b],
+    }
+
+
+@router.get("/api/council/v2/decision/{trade_id}")
+def council_v2_decision(trade_id: str) -> dict:
+    """Retourne la décision de conseil + raisonnements agents pour un trade_id."""
+    from app.council.ai_council import get_last_council_run, get_agent_reasonings
+    decision = get_last_council_run(trade_id)
+    reasonings = get_agent_reasonings(trade_id)
+    if not decision:
+        raise HTTPException(status_code=404, detail="trade_id non trouvé")
+    return {"decision": decision, "agent_reasonings": reasonings}
+
+
+@router.get("/api/council/v2/news")
+def council_v2_news(limit: int = Query(default=20, le=100)) -> dict:
+    """Retourne les actualités récentes à fort impact et le contexte passif."""
+    from app.council.news_aggregator import get_recent_high_news, get_passive_context
+    return {
+        "high_impact_news": get_recent_high_news(limit=limit),
+        "passive_context":  get_passive_context(),
+    }
+
+
+@router.get("/api/council/v2/regime")
+async def council_v2_regime(force: bool = False) -> dict:
+    """Retourne (et optionnellement recalcule) le contexte macro du jour."""
+    from app.council.market_regime import compute_daily_context
+    return await compute_daily_context(force=force)
+
+
+@router.get("/api/council/v2/retex")
+def council_v2_retex_stats() -> dict:
+    """Retourne les statistiques RETEX globales et les règles correctives actives."""
+    from app.council.retex_engine import get_retex_stats, get_active_corrective_rules
+    return {
+        "stats": get_retex_stats(),
+        "active_rules": get_active_corrective_rules(limit=10),
+    }
+
+
+@router.post("/api/council/v2/circuit-breaker/reset")
+def council_v2_cb_reset(payload: CircuitBreakerResetRequest) -> dict:
+    """Remet le circuit breaker à GREEN (action manuelle)."""
+    from app.council.circuit_breaker import reset
+    return reset(reason=payload.reason)

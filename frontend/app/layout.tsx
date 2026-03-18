@@ -7,6 +7,7 @@ import "./globals.css";
 const NAV_LINKS = [
   { href: "/", label: "Dashboard" },
   { href: "/committee", label: "Committee" },
+  { href: "/council", label: "Council v2" },
   { href: "/proposals", label: "Proposals" },
   { href: "/portfolio", label: "Portfolio" },
   { href: "/market", label: "Market" },
