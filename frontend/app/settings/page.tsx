@@ -37,15 +37,6 @@ const COUNCIL_KEYS = [
   },
 ];
 
-// Modèles suggérés par provider (liste non exhaustive, l'utilisateur peut taper librement)
-const SUGGESTED_MODELS: Record<string, string[]> = {
-  slot_1_fundamentalist: ["anthropic/claude-sonnet-4-5", "anthropic/claude-opus-4", "meta-llama/llama-3.3-70b-instruct"],
-  slot_2_quant:          ["mistralai/magistral-medium", "mistralai/mistral-large-latest", "meta-llama/llama-3.3-70b-instruct"],
-  slot_3_news:           ["x-ai/grok-3", "meta-llama/llama-3.3-70b-instruct"],
-  slot_4_contrarian:     ["openai/gpt-4o", "qwen/qwen3-235b-a22b", "meta-llama/llama-3.3-70b-instruct"],
-  slot_5_finance:        ["mistralai/mistral-large-latest", "openai/gpt-4o-mini", "meta-llama/llama-3.3-70b-instruct"],
-  master:                ["anthropic/claude-opus-4", "anthropic/claude-sonnet-4-5", "meta-llama/llama-3.3-70b-instruct"],
-};
 
 const SLOT_LABELS: Record<string, string> = {
   slot_1_fundamentalist: "Fundamentalist",
@@ -275,17 +266,12 @@ export default function SettingsPage() {
                 </div>
                 <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
                   <input
-                    list={`models-${slot}`}
+                    type="text"
                     value={current}
                     placeholder={info?.model_default ?? "provider/model-name"}
                     style={{ flex: 1, fontSize: "0.8rem" }}
                     onChange={(e) => setModelInputs({ ...modelInputs, [slot]: e.target.value })}
                   />
-                  <datalist id={`models-${slot}`}>
-                    {(SUGGESTED_MODELS[slot] ?? []).map((m) => (
-                      <option key={m} value={m} />
-                    ))}
-                  </datalist>
                   {(modelInputs[slot] || info?.customized) && (
                     <button
                       type="button"
