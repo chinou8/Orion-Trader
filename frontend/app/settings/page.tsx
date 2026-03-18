@@ -29,6 +29,12 @@ const COUNCIL_KEYS = [
     hint: "Clé globale utilisée par tous les agents du Council v2",
     placeholder: "sk-or-…",
   },
+  {
+    id: "xai_api_key" as const,
+    label: "xAI API Key (Grok)",
+    hint: "Utilisée par l'agent News/Sentiment (slot 3)",
+    placeholder: "xai-…",
+  },
 ];
 
 // Modèles suggérés par provider (liste non exhaustive, l'utilisateur peut taper librement)
