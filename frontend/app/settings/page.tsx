@@ -37,76 +37,24 @@ const COUNCIL_KEYS = [
   },
 ];
 
-type AgentCfg = {
-  claude_enabled: boolean;
-  gpt4o_enabled: boolean;
-  grok_enabled: boolean;
-  anthropic_key_set: boolean;
-  openai_key_set: boolean;
-  xai_key_set: boolean;
-};
-
 const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://127.0.0.1:8080";
-
-const AGENTS = [
-  {
-    id: "claude" as const,
-    label: "Claude (Anthropic)",
-    model: "claude-opus-4-6",
-    keyField: "anthropic_api_key" as const,
-    keySetField: "anthropic_key_set" as const,
-    enabledField: "claude_enabled" as const,
-    placeholder: "sk-ant-api03-…",
-  },
-  {
-    id: "gpt4o" as const,
-    label: "GPT-4o (OpenAI)",
-    model: "gpt-4o",
-    keyField: "openai_api_key" as const,
-    keySetField: "openai_key_set" as const,
-    enabledField: "gpt4o_enabled" as const,
-    placeholder: "sk-…",
-  },
-  {
-    id: "grok" as const,
-    label: "Grok (xAI)",
-    model: "grok-3",
-    keyField: "xai_api_key" as const,
-    keySetField: "xai_key_set" as const,
-    enabledField: "grok_enabled" as const,
-    placeholder: "xai-…",
-  },
-];
 
 export default function SettingsPage() {
   const [form, setForm] = useState<SettingsPayload | null>(null);
-  const [message, setMessage] = useState<string>("");
-  const [error, setError] = useState<string>("");
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
 
-  // Council v2 keys state
   const [councilKeysStatus, setCouncilKeysStatus] = useState<CouncilKeysStatus | null>(null);
   const [councilKeyInputs, setCouncilKeyInputs] = useState<Record<string, string>>({});
   const [councilKeysMsg, setCouncilKeysMsg] = useState("");
   const [councilKeysErr, setCouncilKeysErr] = useState("");
   const [showCouncilKeys, setShowCouncilKeys] = useState<Record<string, boolean>>({});
 
-  // Agent config state
-  const [agentCfg, setAgentCfg] = useState<AgentCfg | null>(null);
-  const [agentKeys, setAgentKeys] = useState<Record<string, string>>({});
-  const [agentMsg, setAgentMsg] = useState<string>("");
-  const [agentErr, setAgentErr] = useState<string>("");
-  const [showKeys, setShowKeys] = useState<Record<string, boolean>>({});
-
   useEffect(() => {
     fetch(`${backendUrl}/api/settings`)
       .then((r) => r.ok ? r.json() : Promise.reject(r.status))
       .then((d) => setForm(d as SettingsPayload))
       .catch((e) => setError(String(e)));
-
-    fetch(`${backendUrl}/api/agents/config`)
-      .then((r) => r.ok ? r.json() : Promise.reject(r.status))
-      .then((d) => setAgentCfg(d as AgentCfg))
-      .catch(() => {});
 
     fetch(`${backendUrl}/api/council/v2/keys`)
       .then((r) => r.ok ? r.json() : Promise.reject(r.status))
@@ -149,38 +97,9 @@ export default function SettingsPage() {
       if (!r.ok) throw new Error(`HTTP ${r.status}: ${await r.text()}`);
       setCouncilKeysStatus(await r.json() as CouncilKeysStatus);
       setCouncilKeyInputs({});
-      setCouncilKeysMsg("Clés Council v2 sauvegardées");
+      setCouncilKeysMsg("Clés sauvegardées");
     } catch (e) {
       setCouncilKeysErr(String(e));
-    }
-  };
-
-  const saveAgentCfg = async () => {
-    setAgentMsg("");
-    setAgentErr("");
-    if (!agentCfg) return;
-    try {
-      const payload: Record<string, unknown> = {
-        claude_enabled: agentCfg.claude_enabled,
-        gpt4o_enabled: agentCfg.gpt4o_enabled,
-        grok_enabled: agentCfg.grok_enabled,
-      };
-      for (const agent of AGENTS) {
-        const val = agentKeys[agent.keyField];
-        if (val !== undefined) payload[agent.keyField] = val;
-      }
-      const r = await fetch(`${backendUrl}/api/agents/config`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      if (!r.ok) throw new Error(`HTTP ${r.status}: ${await r.text()}`);
-      const updated = await r.json() as AgentCfg;
-      setAgentCfg(updated);
-      setAgentKeys({});
-      setAgentMsg("Configuration IA sauvegardée");
-    } catch (e) {
-      setAgentErr(String(e));
     }
   };
 
@@ -201,15 +120,14 @@ export default function SettingsPage() {
       <section id="council-keys" style={{ marginBottom: "2.5rem" }}>
         <h2>Clés API — Council v2</h2>
         <p style={{ color: "var(--text-dim)", fontSize: "0.8rem", marginBottom: "1rem" }}>
-          Ces clés sont stockées en base de données locale (chiffrées à l&apos;application).
-          Priorité : DB → variable d&apos;environnement → clé fictive (compilation).
+          Stockées en base de données locale. Priorité : DB → variable d&apos;environnement → clé fictive.
         </p>
 
         <div style={{ display: "grid", gap: "0.75rem", maxWidth: "580px" }}>
           {COUNCIL_KEYS.map((k) => {
-            const status = councilKeysStatus?.[k.id];
-            const isSet  = status?.set ?? false;
-            const source = status?.source ?? "none";
+            const status  = councilKeysStatus?.[k.id];
+            const isSet   = status?.set ?? false;
+            const source  = status?.source ?? "none";
             const pending = councilKeyInputs[k.id] ?? "";
             const revealed = showCouncilKeys[k.id] ?? false;
 
@@ -255,74 +173,11 @@ export default function SettingsPage() {
           })}
 
           <div style={{ display: "flex", gap: "0.75rem", alignItems: "center", marginTop: "0.25rem" }}>
-            <button type="button" onClick={saveCouncilKeys}>Sauvegarder les clés v2</button>
+            <button type="button" onClick={saveCouncilKeys}>Sauvegarder les clés</button>
             {councilKeysMsg && <span className="status-ok" style={{ fontSize: "0.8rem" }}>{councilKeysMsg}</span>}
             {councilKeysErr && <span className="status-ko" style={{ fontSize: "0.8rem" }}>{councilKeysErr}</span>}
           </div>
         </div>
-      </section>
-
-      {/* ── AI Agents ── */}
-      <section id="agents" style={{ marginBottom: "2.5rem" }}>
-        <h2>Agents IA</h2>
-        <p style={{ color: "var(--text-dim)", fontSize: "0.8rem", marginBottom: "1rem" }}>
-          Activez les agents qui participent au comité de vote. Chaque agent nécessite une clé API.
-        </p>
-
-        {agentCfg && (
-          <div style={{ display: "grid", gap: "0.75rem", maxWidth: "580px" }}>
-            {AGENTS.map((agent) => {
-              const enabled = agentCfg[agent.enabledField];
-              const keySet = agentCfg[agent.keySetField];
-              const pendingKey = agentKeys[agent.keyField] ?? "";
-              const revealed = showKeys[agent.id] ?? false;
-
-              return (
-                <div key={agent.id} className={`card card-accent`} style={{ padding: "0.9rem 1rem" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginBottom: "0.6rem" }}>
-                    <label className="toggle">
-                      <input
-                        type="checkbox"
-                        checked={enabled}
-                        onChange={(e) => setAgentCfg({ ...agentCfg, [agent.enabledField]: e.target.checked })}
-                      />
-                      <span className="toggle-slider" />
-                    </label>
-                    <span style={{ fontWeight: 700, fontSize: "0.9rem", color: enabled ? "var(--green)" : "var(--text-dim)" }}>
-                      {agent.label}
-                    </span>
-                    <span style={{ fontSize: "0.72rem", color: "var(--text-dim)", marginLeft: "auto" }}>{agent.model}</span>
-                    <span className={`badge ${keySet || pendingKey ? "badge-on" : "badge-off"}`}>
-                      {keySet || pendingKey ? "Clé ✓" : "Pas de clé"}
-                    </span>
-                  </div>
-                  <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
-                    <input
-                      type={revealed ? "text" : "password"}
-                      value={pendingKey}
-                      placeholder={keySet ? "••••••• (clé existante)" : agent.placeholder}
-                      style={{ flex: 1, fontSize: "0.8rem" }}
-                      onChange={(e) => setAgentKeys({ ...agentKeys, [agent.keyField]: e.target.value })}
-                    />
-                    <button
-                      type="button"
-                      style={{ padding: "0.3rem 0.6rem", fontSize: "0.75rem" }}
-                      onClick={() => setShowKeys({ ...showKeys, [agent.id]: !revealed })}
-                    >
-                      {revealed ? "Masquer" : "Voir"}
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-
-            <div style={{ display: "flex", gap: "0.75rem", alignItems: "center", marginTop: "0.25rem" }}>
-              <button type="button" onClick={saveAgentCfg}>Sauvegarder la config IA</button>
-              {agentMsg && <span className="status-ok" style={{ fontSize: "0.8rem" }}>{agentMsg}</span>}
-              {agentErr && <span className="status-ko" style={{ fontSize: "0.8rem" }}>{agentErr}</span>}
-            </div>
-          </div>
-        )}
       </section>
 
       {/* ── Trading Settings ── */}
