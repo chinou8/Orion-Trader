@@ -26,14 +26,8 @@ const COUNCIL_KEYS = [
   {
     id: "openrouter_api_key" as const,
     label: "OpenRouter API Key",
-    hint: "Utilisée par les agents Fundamentalist, Quant, Contrarian, Finance et Master",
+    hint: "Clé globale utilisée par tous les agents du Council v2",
     placeholder: "sk-or-…",
-  },
-  {
-    id: "xai_api_key" as const,
-    label: "xAI API Key (Grok)",
-    hint: "Utilisée par l'agent News/Sentiment (slot 3)",
-    placeholder: "xai-…",
   },
 ];
 
@@ -59,7 +53,7 @@ const SLOT_LABELS: Record<string, string> = {
 const SLOT_HINTS: Record<string, string> = {
   slot_1_fundamentalist: "Analyse fondamentale — via OpenRouter",
   slot_2_quant:          "Analyse quantitative — via OpenRouter",
-  slot_3_news:           "Actualités & sentiment — via xAI (Grok natif) ou OpenRouter",
+  slot_3_news:           "Actualités & sentiment — via OpenRouter",
   slot_4_contrarian:     "Vision contrariante — via OpenRouter",
   slot_5_finance:        "Analyse financière macro — via OpenRouter",
   master:                "Arbitrage 3/2 — appelé uniquement si vote serré",
