@@ -28,6 +28,7 @@ from app.core.simulator import (
     Reflection,
     SimulatedTrade,
 )
+from app.core.agent_config import AgentConfigResponse, AgentConfigUpdateRequest
 from app.core.trading_settings import TradingSettings
 from app.core.watchlist import WatchlistCreateRequest, WatchlistItem, WatchlistUpdateRequest
 from app.decision.committee import run_committee
@@ -54,6 +55,7 @@ from app.storage.database import (
     get_performance_summary,
     get_portfolio,
     get_rss_feeds,
+    get_agent_config,
     get_trading_settings,
     get_watchlist_items,
     insert_market_bars,
@@ -61,6 +63,7 @@ from app.storage.database import (
     list_simulated_trades,
     list_trade_proposals,
     reject_trade_proposal,
+    save_agent_config,
     save_trading_settings,
     soft_delete_watchlist_item,
     update_rss_feed,
@@ -431,6 +434,61 @@ def post_committee_run() -> CommitteeRun:
 @router.get("/api/committee/runs", response_model=list[CommitteeRun])
 def get_committee_runs(limit: int = Query(20, ge=1, le=100)) -> list[CommitteeRun]:
     return list_committee_runs(limit=limit)
+
+
+@router.get("/api/agents/config", response_model=AgentConfigResponse)
+def get_agents_config() -> AgentConfigResponse:
+    import os
+    cfg = get_agent_config()
+    # Merge: if a key is blank in DB but set in env, mark as set
+    anthropic_key = cfg.anthropic_api_key or os.environ.get("ANTHROPIC_API_KEY", "")
+    openai_key = cfg.openai_api_key or os.environ.get("OPENAI_API_KEY", "")
+    xai_key = cfg.xai_api_key or os.environ.get("XAI_API_KEY", "")
+    return AgentConfigResponse(
+        claude_enabled=cfg.claude_enabled,
+        gpt4o_enabled=cfg.gpt4o_enabled,
+        grok_enabled=cfg.grok_enabled,
+        anthropic_key_set=bool(anthropic_key),
+        openai_key_set=bool(openai_key),
+        xai_key_set=bool(xai_key),
+    )
+
+
+@router.put("/api/agents/config", response_model=AgentConfigResponse)
+def put_agents_config(payload: AgentConfigUpdateRequest) -> AgentConfigResponse:
+    import os
+    cfg = get_agent_config()
+
+    if payload.claude_enabled is not None:
+        cfg.claude_enabled = payload.claude_enabled
+    if payload.gpt4o_enabled is not None:
+        cfg.gpt4o_enabled = payload.gpt4o_enabled
+    if payload.grok_enabled is not None:
+        cfg.grok_enabled = payload.grok_enabled
+
+    if payload.anthropic_api_key is not None:
+        cfg.anthropic_api_key = payload.anthropic_api_key
+        os.environ["ANTHROPIC_API_KEY"] = payload.anthropic_api_key
+    if payload.openai_api_key is not None:
+        cfg.openai_api_key = payload.openai_api_key
+        os.environ["OPENAI_API_KEY"] = payload.openai_api_key
+    if payload.xai_api_key is not None:
+        cfg.xai_api_key = payload.xai_api_key
+        os.environ["XAI_API_KEY"] = payload.xai_api_key
+
+    save_agent_config(cfg)
+
+    anthropic_key = cfg.anthropic_api_key or os.environ.get("ANTHROPIC_API_KEY", "")
+    openai_key = cfg.openai_api_key or os.environ.get("OPENAI_API_KEY", "")
+    xai_key = cfg.xai_api_key or os.environ.get("XAI_API_KEY", "")
+    return AgentConfigResponse(
+        claude_enabled=cfg.claude_enabled,
+        gpt4o_enabled=cfg.gpt4o_enabled,
+        grok_enabled=cfg.grok_enabled,
+        anthropic_key_set=bool(anthropic_key),
+        openai_key_set=bool(openai_key),
+        xai_key_set=bool(xai_key),
+    )
 
 
 @router.post("/api/chat/thread", response_model=ChatThreadCreateResponse)

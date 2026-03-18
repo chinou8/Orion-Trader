@@ -2,286 +2,261 @@
 
 import { useEffect, useMemo, useState } from "react";
 
-type WatchlistItem = {
-  id: number;
-  symbol: string;
-  notes: string;
-};
-
-type NewsItem = {
-  id: number;
-  title: string;
-  feed_name: string;
-};
-
-type Proposal = {
-  id: number;
-  symbol: string;
-  side: string;
-  status: string;
-};
-
-type PortfolioState = {
-  cash_eur: number;
-  equity_eur: number;
-  unrealized_pnl_eur: number;
-  realized_pnl_eur: number;
-};
-
-type EquityCurvePoint = {
-  ts: string;
-  equity_eur: number;
-  cash_eur: number;
-  realized_pnl_eur: number;
-  unrealized_pnl_eur: number;
-};
-
-type PerformanceSummary = {
-  current_equity_eur: number;
-  performance_since_start_pct: number;
-  trades_count: number;
-  pnl_total_eur: number;
-};
-
-type ExecutionStatus = {
-  mode: "SIMULATED" | "IBKR_PAPER" | "IBKR_LIVE";
-};
-
-type MarketIndicators = {
-  symbol: string;
-  sma20: number | null;
-  sma50: number | null;
-  rsi14: number | null;
-  volatility: number | null;
-  horizon_hint: string;
-};
+type WatchlistItem = { id: number; symbol: string; notes: string };
+type NewsItem = { id: number; title: string; feed_name: string; link?: string };
+type Proposal = { id: number; symbol: string; side: string; status: string };
+type PortfolioState = { cash_eur: number; equity_eur: number; unrealized_pnl_eur: number; realized_pnl_eur: number };
+type EquityCurvePoint = { ts: string; equity_eur: number };
+type PerformanceSummary = { current_equity_eur: number; performance_since_start_pct: number; trades_count: number; pnl_total_eur: number };
+type ExecutionStatus = { mode: string };
+type MarketIndicators = { symbol: string; sma20: number | null; sma50: number | null; rsi14: number | null };
+type AgentCfg = { claude_enabled: boolean; gpt4o_enabled: boolean; grok_enabled: boolean; anthropic_key_set: boolean; openai_key_set: boolean; xai_key_set: boolean };
 
 const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://127.0.0.1:8080";
 
-function polylinePoints(values: number[], width: number, height: number): string {
-  if (values.length === 0) return "";
+function svgPolyline(values: number[], w: number, h: number): string {
+  if (values.length < 2) return "";
   const min = Math.min(...values);
   const max = Math.max(...values);
   const span = max - min || 1;
   return values
-    .map((value, index) => {
-      const x = values.length === 1 ? width / 2 : (index / (values.length - 1)) * width;
-      const y = height - ((value - min) / span) * height;
-      return `${x.toFixed(2)},${y.toFixed(2)}`;
+    .map((v, i) => {
+      const x = (i / (values.length - 1)) * w;
+      const y = h - ((v - min) / span) * (h - 6) - 3;
+      return `${x.toFixed(1)},${y.toFixed(1)}`;
     })
     .join(" ");
 }
 
+function rsiColor(rsi: number | null): string {
+  if (rsi === null) return "var(--text-dim)";
+  if (rsi > 70) return "var(--red)";
+  if (rsi < 30) return "var(--green)";
+  return "var(--yellow)";
+}
+
 export default function DashboardPage() {
-  const [watchlistTop, setWatchlistTop] = useState<WatchlistItem[]>([]);
-  const [newsTop, setNewsTop] = useState<NewsItem[]>([]);
-  const [marketTop, setMarketTop] = useState<MarketIndicators[]>([]);
-  const [pendingProposals, setPendingProposals] = useState<Proposal[]>([]);
-  const [portfolioState, setPortfolioState] = useState<PortfolioState | null>(null);
-  const [equityCurve, setEquityCurve] = useState<EquityCurvePoint[]>([]);
-  const [performanceSummary, setPerformanceSummary] = useState<PerformanceSummary | null>(null);
-  const [executionStatus, setExecutionStatus] = useState<ExecutionStatus | null>(null);
+  const [watchlist, setWatchlist] = useState<WatchlistItem[]>([]);
+  const [news, setNews] = useState<NewsItem[]>([]);
+  const [market, setMarket] = useState<MarketIndicators[]>([]);
+  const [pending, setPending] = useState<Proposal[]>([]);
+  const [portfolio, setPortfolio] = useState<PortfolioState | null>(null);
+  const [curve, setCurve] = useState<EquityCurvePoint[]>([]);
+  const [perf, setPerf] = useState<PerformanceSummary | null>(null);
+  const [exec, setExec] = useState<ExecutionStatus | null>(null);
+  const [agentCfg, setAgentCfg] = useState<AgentCfg | null>(null);
 
   useEffect(() => {
-    const loadData = async () => {
-      try {
-        const [watchlistRes, newsRes, proposalsRes, portfolioRes, curveRes, perfRes, execRes] = await Promise.all([
-          fetch(`${backendUrl}/api/watchlist`, { cache: "no-store" }),
-          fetch(`${backendUrl}/api/news?limit=5`, { cache: "no-store" }),
-          fetch(`${backendUrl}/api/proposals?status=PENDING&limit=5`, { cache: "no-store" }),
-          fetch(`${backendUrl}/api/portfolio`, { cache: "no-store" }),
-          fetch(`${backendUrl}/api/portfolio/equity_curve?limit=120`, { cache: "no-store" }),
-          fetch(`${backendUrl}/api/portfolio/performance_summary`, { cache: "no-store" }),
-          fetch(`${backendUrl}/api/execution/status`, { cache: "no-store" })
-        ]);
+    const load = async () => {
+      const [wRes, nRes, pRes, pfRes, cRes, perfRes, eRes, aRes] = await Promise.allSettled([
+        fetch(`${backendUrl}/api/watchlist`),
+        fetch(`${backendUrl}/api/news?limit=5`),
+        fetch(`${backendUrl}/api/proposals?status=PENDING&limit=5`),
+        fetch(`${backendUrl}/api/portfolio`),
+        fetch(`${backendUrl}/api/portfolio/equity_curve?limit=120`),
+        fetch(`${backendUrl}/api/portfolio/performance_summary`),
+        fetch(`${backendUrl}/api/execution/status`),
+        fetch(`${backendUrl}/api/agents/config`),
+      ]);
 
-        let watchlistPayload: WatchlistItem[] = [];
-        if (watchlistRes.ok) {
-          watchlistPayload = (await watchlistRes.json()) as WatchlistItem[];
-          setWatchlistTop(watchlistPayload.slice(0, 5));
-        }
-
-        if (newsRes.ok) {
-          const newsPayload = (await newsRes.json()) as NewsItem[];
-          setNewsTop(newsPayload.slice(0, 5));
-        }
-
-        if (proposalsRes.ok) {
-          const proposalsPayload = (await proposalsRes.json()) as Proposal[];
-          setPendingProposals(proposalsPayload.slice(0, 5));
-        }
-
-        if (portfolioRes.ok) {
-          const portfolioPayload = (await portfolioRes.json()) as { state: PortfolioState };
-          setPortfolioState(portfolioPayload.state);
-        }
-
-        if (curveRes.ok) {
-          setEquityCurve((await curveRes.json()) as EquityCurvePoint[]);
-        }
-
-        if (perfRes.ok) {
-          setPerformanceSummary((await perfRes.json()) as PerformanceSummary);
-        }
-
-        if (execRes.ok) {
-          setExecutionStatus((await execRes.json()) as ExecutionStatus);
-        }
-
-        const topSymbols = watchlistPayload.slice(0, 3).map((item) => item.symbol);
-        const indicatorResponses = await Promise.all(
-          topSymbols.map(async (symbol) => {
-            const res = await fetch(
-              `${backendUrl}/api/market/indicators?symbol=${encodeURIComponent(symbol)}`,
-              { cache: "no-store" }
-            );
-            if (!res.ok) return null;
-            return (await res.json()) as MarketIndicators;
-          })
-        );
-        setMarketTop(indicatorResponses.filter((x): x is MarketIndicators => x !== null));
-      } catch {
-        setWatchlistTop([]);
-        setNewsTop([]);
-        setMarketTop([]);
-        setPendingProposals([]);
-        setPortfolioState(null);
-        setEquityCurve([]);
-        setPerformanceSummary(null);
-        setExecutionStatus(null);
+      let wl: WatchlistItem[] = [];
+      if (wRes.status === "fulfilled" && wRes.value.ok) {
+        wl = await wRes.value.json();
+        setWatchlist(wl.slice(0, 5));
       }
-    };
+      if (nRes.status === "fulfilled" && nRes.value.ok) setNews(await nRes.value.json());
+      if (pRes.status === "fulfilled" && pRes.value.ok) setPending(await pRes.value.json());
+      if (pfRes.status === "fulfilled" && pfRes.value.ok) {
+        const d = await pfRes.value.json();
+        setPortfolio(d.state ?? null);
+      }
+      if (cRes.status === "fulfilled" && cRes.value.ok) setCurve(await cRes.value.json());
+      if (perfRes.status === "fulfilled" && perfRes.value.ok) setPerf(await perfRes.value.json());
+      if (eRes.status === "fulfilled" && eRes.value.ok) setExec(await eRes.value.json());
+      if (aRes.status === "fulfilled" && aRes.value.ok) setAgentCfg(await aRes.value.json());
 
-    loadData();
+      const symbols = wl.slice(0, 3).map((i) => i.symbol);
+      const indics = await Promise.allSettled(
+        symbols.map((s) => fetch(`${backendUrl}/api/market/indicators?symbol=${s}`).then((r) => r.ok ? r.json() : null))
+      );
+      setMarket(indics.flatMap((r) => (r.status === "fulfilled" && r.value ? [r.value] : [])));
+    };
+    load();
   }, []);
 
-  const equityPolyline = useMemo(
-    () => polylinePoints(equityCurve.map((point) => point.equity_eur), 320, 120),
-    [equityCurve]
-  );
+  const polyline = useMemo(() => svgPolyline(curve.map((p) => p.equity_eur), 400, 100), [curve]);
+  const perfPct = perf?.performance_since_start_pct ?? 0;
+  const perfColor = perfPct >= 0 ? "var(--green)" : "var(--red)";
+
+  const agents = agentCfg ? [
+    { name: "Claude", enabled: agentCfg.claude_enabled, keySet: agentCfg.anthropic_key_set },
+    { name: "GPT-4o", enabled: agentCfg.gpt4o_enabled, keySet: agentCfg.openai_key_set },
+    { name: "Grok",   enabled: agentCfg.grok_enabled,   keySet: agentCfg.xai_key_set },
+  ] : [];
 
   return (
     <main>
-      <h1>Orion Trader Dashboard</h1>
-      <p><strong>Execution mode:</strong> {executionStatus?.mode ?? "unknown"}</p>
-      <p>
-        Minimal frontend scaffold. Backend status page: <a href="/status">/status</a> · Settings: <a href="/settings">/settings</a> · Chat: <a href="/chat">/chat</a> · Watchlist: <a href="/watchlist">/watchlist</a> · News: <a href="/news">/news</a> · Market: <a href="/market">/market</a> · Proposals: <a href="/proposals">/proposals</a> · Portfolio: <a href="/portfolio">/portfolio</a>
-      </p>
+      <h1>Dashboard</h1>
 
       <div className="grid">
-        <section className="card">
-          <h2>Equity Curve</h2>
-          {equityCurve.length < 1 ? (
-            <p>No equity points yet.</p>
+        {/* ── Equity curve ── */}
+        <div className="card card-accent" style={{ gridColumn: "span 2" }}>
+          <h2>Equity curve</h2>
+          {curve.length < 2 ? (
+            <p style={{ color: "var(--text-dim)" }}>Aucune donnée.</p>
           ) : (
-            <>
-              <svg viewBox="0 0 320 120" width="100%" height="120" role="img" aria-label="Equity curve">
-                <polyline fill="none" stroke="#38bdf8" strokeWidth="2" points={equityPolyline} />
-              </svg>
-              <p>Last equity: {equityCurve[equityCurve.length - 1].equity_eur.toFixed(2)} EUR</p>
-            </>
+            <svg className="equity-svg" viewBox={`0 0 400 100`} height="100" preserveAspectRatio="none">
+              <defs>
+                <linearGradient id="eg" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="var(--green)" stopOpacity="0.3" />
+                  <stop offset="100%" stopColor="var(--green)" stopOpacity="0" />
+                </linearGradient>
+              </defs>
+              <polyline fill="none" stroke="var(--green)" strokeWidth="1.5" points={polyline} />
+            </svg>
           )}
-          {performanceSummary ? (
-            <ul>
-              <li>Perf since start: {performanceSummary.performance_since_start_pct.toFixed(2)}%</li>
-              <li>Trades: {performanceSummary.trades_count}</li>
-              <li>Total PnL: {performanceSummary.pnl_total_eur.toFixed(2)} EUR</li>
-            </ul>
-          ) : null}
-        </section>
+          {perf && (
+            <div style={{ display: "flex", gap: "1.5rem", marginTop: "0.5rem", flexWrap: "wrap" }}>
+              <span style={{ fontSize: "0.85rem" }}>
+                Equity : <strong>{perf.current_equity_eur.toLocaleString("fr-FR", { minimumFractionDigits: 2 })} €</strong>
+              </span>
+              <span style={{ fontSize: "0.85rem", color: perfColor, fontWeight: 700 }}>
+                {perfPct >= 0 ? "+" : ""}{perfPct.toFixed(2)}%
+              </span>
+              <span style={{ fontSize: "0.85rem", color: "var(--text-dim)" }}>
+                {perf.trades_count} trades · PnL {perf.pnl_total_eur >= 0 ? "+" : ""}{perf.pnl_total_eur.toFixed(2)} €
+              </span>
+            </div>
+          )}
+        </div>
 
-        <section className="card">
-          <h2>Agents (LIVE/SHADOW)</h2>
-          <p>Placeholder: active agents and execution mode.</p>
-        </section>
+        {/* ── Agents ── */}
+        <div className="card">
+          <h2>Agents IA</h2>
+          {agents.length === 0 ? (
+            <p style={{ color: "var(--text-dim)" }}>Chargement…</p>
+          ) : (
+            <div style={{ display: "grid", gap: "0.4rem" }}>
+              {agents.map((a) => (
+                <div key={a.name} className="toggle-row">
+                  <span style={{ color: a.enabled ? "var(--green)" : "var(--text-dim)" }}>
+                    <span className={`dot ${a.enabled ? "dot-green" : "dot-gray"}`} />
+                    {a.name}
+                  </span>
+                  <span style={{ display: "flex", gap: "0.4rem" }}>
+                    <span className={`badge ${a.enabled ? "badge-on" : "badge-off"}`}>{a.enabled ? "ON" : "OFF"}</span>
+                    <span className={`badge ${a.keySet ? "badge-on" : "badge-off"}`}>{a.keySet ? "Clé ✓" : "Pas de clé"}</span>
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+          <div style={{ marginTop: "0.75rem" }}>
+            <a href="/committee" style={{ fontSize: "0.8rem" }}>→ Lancer le comité</a>
+            {" · "}
+            <a href="/settings#agents" style={{ fontSize: "0.8rem" }}>Configurer</a>
+          </div>
+        </div>
 
-        <section className="card">
-          <h2>Logs</h2>
-          <p>Placeholder: latest strategy and execution logs.</p>
-        </section>
+        {/* ── Portfolio ── */}
+        <div className="card">
+          <h2>Portfolio</h2>
+          {portfolio ? (
+            <div style={{ display: "grid", gap: "0.3rem" }}>
+              <div className="toggle-row"><span>Cash</span><strong>{portfolio.cash_eur.toLocaleString("fr-FR", { minimumFractionDigits: 2 })} €</strong></div>
+              <div className="toggle-row"><span>Equity</span><strong>{portfolio.equity_eur.toLocaleString("fr-FR", { minimumFractionDigits: 2 })} €</strong></div>
+              <div className="toggle-row"><span>uPnL</span><strong style={{ color: portfolio.unrealized_pnl_eur >= 0 ? "var(--green)" : "var(--red)" }}>{portfolio.unrealized_pnl_eur >= 0 ? "+" : ""}{portfolio.unrealized_pnl_eur.toFixed(2)} €</strong></div>
+              <div className="toggle-row"><span>rPnL</span><strong style={{ color: portfolio.realized_pnl_eur >= 0 ? "var(--green)" : "var(--red)" }}>{portfolio.realized_pnl_eur >= 0 ? "+" : ""}{portfolio.realized_pnl_eur.toFixed(2)} €</strong></div>
+            </div>
+          ) : (
+            <p style={{ color: "var(--text-dim)" }}>Aucun portefeuille.</p>
+          )}
+          <div style={{ marginTop: "0.75rem" }}><a href="/portfolio" style={{ fontSize: "0.8rem" }}>→ Portfolio complet</a></div>
+        </div>
 
-        <section className="card">
-          <h2>Orders / Proposals</h2>
-          <p>Placeholder: current orders, proposals, and statuses.</p>
-        </section>
+        {/* ── Market snapshot ── */}
+        <div className="card">
+          <h2>Market snapshot</h2>
+          {market.length === 0 ? (
+            <p style={{ color: "var(--text-dim)" }}>Pas de données.</p>
+          ) : (
+            <div style={{ display: "grid", gap: "0.4rem" }}>
+              {market.map((m) => (
+                <div key={m.symbol} className="toggle-row">
+                  <strong style={{ letterSpacing: "0.06em" }}>{m.symbol}</strong>
+                  <span style={{ display: "flex", gap: "0.5rem", alignItems: "center", fontSize: "0.8rem" }}>
+                    {m.rsi14 !== null && (
+                      <span style={{ color: rsiColor(m.rsi14) }}>RSI {m.rsi14.toFixed(0)}</span>
+                    )}
+                    <span style={{ color: m.sma20 && m.sma50 && m.sma20 > m.sma50 ? "var(--green)" : "var(--red)", fontSize: "0.72rem" }}>
+                      {m.sma20 && m.sma50 ? (m.sma20 > m.sma50 ? "↑ bull" : "↓ bear") : "—"}
+                    </span>
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+          <div style={{ marginTop: "0.75rem" }}><a href="/market" style={{ fontSize: "0.8rem" }}>→ Marché</a></div>
+        </div>
 
-        <section className="card">
-          <h2>Watchlist (Top 5)</h2>
-          {watchlistTop.length === 0 ? (
-            <p>No active watchlist items.</p>
+        {/* ── Watchlist ── */}
+        <div className="card">
+          <h2>Watchlist</h2>
+          {watchlist.length === 0 ? (
+            <p style={{ color: "var(--text-dim)" }}>Vide.</p>
           ) : (
             <ul>
-              {watchlistTop.map((item) => (
+              {watchlist.map((item) => (
                 <li key={item.id}>
-                  <strong>{item.symbol}</strong> {item.notes ? `- ${item.notes}` : ""}
+                  <strong style={{ letterSpacing: "0.06em" }}>{item.symbol}</strong>
+                  {item.notes && <span style={{ color: "var(--text-dim)", fontSize: "0.78rem" }}> — {item.notes}</span>}
                 </li>
               ))}
             </ul>
           )}
-        </section>
+          <div style={{ marginTop: "0.75rem" }}><a href="/watchlist" style={{ fontSize: "0.8rem" }}>→ Gérer la watchlist</a></div>
+        </div>
 
-        <section className="card">
-          <h2>Latest News</h2>
-          {newsTop.length === 0 ? (
-            <p>No news items yet.</p>
+        {/* ── Pending proposals ── */}
+        <div className="card">
+          <h2>Propositions en attente</h2>
+          {pending.length === 0 ? (
+            <p style={{ color: "var(--text-dim)" }}>Aucune proposition.</p>
           ) : (
             <ul>
-              {newsTop.map((item) => (
-                <li key={item.id}>
-                  <strong>{item.feed_name}</strong> - {item.title}
+              {pending.map((p) => (
+                <li key={p.id} style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                  <span className={`badge badge-${p.side.toLowerCase()}`}>{p.side}</span>
+                  <strong style={{ letterSpacing: "0.06em" }}>{p.symbol}</strong>
+                  <span style={{ color: "var(--text-dim)", fontSize: "0.78rem" }}>#{p.id}</span>
                 </li>
               ))}
             </ul>
           )}
-          <p><a href="/news">See all news</a></p>
-        </section>
+          <div style={{ marginTop: "0.75rem" }}><a href="/proposals" style={{ fontSize: "0.8rem" }}>→ Gérer les propositions</a></div>
+        </div>
 
-        <section className="card">
-          <h2>Pending Proposals</h2>
-          {pendingProposals.length === 0 ? (
-            <p>No pending proposals.</p>
+        {/* ── News ── */}
+        <div className="card" style={{ gridColumn: "span 2" }}>
+          <h2>Dernières actualités</h2>
+          {news.length === 0 ? (
+            <p style={{ color: "var(--text-dim)" }}>Aucune news.</p>
           ) : (
             <ul>
-              {pendingProposals.map((item) => (
-                <li key={item.id}>
-                  <strong>#{item.id}</strong> {item.symbol} — {item.side}
+              {news.map((item) => (
+                <li key={item.id} style={{ padding: "0.3rem 0" }}>
+                  <span style={{ color: "var(--text-dim)", fontSize: "0.72rem", marginRight: "0.5rem" }}>{item.feed_name}</span>
+                  {item.link ? (
+                    <a href={item.link} target="_blank" rel="noreferrer" style={{ fontSize: "0.83rem" }}>{item.title}</a>
+                  ) : (
+                    <span style={{ fontSize: "0.83rem" }}>{item.title}</span>
+                  )}
                 </li>
               ))}
             </ul>
           )}
-          <p><a href="/proposals">Open proposals</a></p>
-        </section>
-
-        <section className="card">
-          <h2>Portfolio Snapshot</h2>
-          {portfolioState ? (
-            <ul>
-              <li>Cash: {portfolioState.cash_eur}</li>
-              <li>Equity: {portfolioState.equity_eur}</li>
-              <li>uPnL: {portfolioState.unrealized_pnl_eur}</li>
-              <li>rPnL: {portfolioState.realized_pnl_eur}</li>
-            </ul>
-          ) : (
-            <p>No portfolio state.</p>
-          )}
-          <p><a href="/portfolio">Open portfolio</a></p>
-        </section>
-
-        <section className="card">
-          <h2>Market Snapshot</h2>
-          {marketTop.length === 0 ? (
-            <p>No market snapshot yet.</p>
-          ) : (
-            <ul>
-              {marketTop.map((item) => (
-                <li key={item.symbol}>
-                  <strong>{item.symbol}</strong> — RSI {item.rsi14 ?? "n/a"} — Trend {item.sma20 && item.sma50 && item.sma20 > item.sma50 ? "SMA20>SMA50" : "SMA20<=SMA50"}
-                </li>
-              ))}
-            </ul>
-          )}
-          <p><a href="/market">Open market module</a></p>
-        </section>
+          <div style={{ marginTop: "0.75rem" }}><a href="/news" style={{ fontSize: "0.8rem" }}>→ Toutes les news</a></div>
+        </div>
       </div>
     </main>
   );

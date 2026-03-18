@@ -14,6 +14,7 @@ from app.marketdata.indicators import compute_indicators
 from app.storage.database import (
     create_trade_proposal,
     get_active_watchlist_symbols,
+    get_agent_config,
     get_latest_news,
     get_market_closes,
     save_committee_run,
@@ -77,7 +78,16 @@ def run_committee() -> CommitteeRun:
     news_items = get_latest_news(limit=5)
     news_headlines = "\n".join(f"  - {item.title}" for item in news_items) or "  (no recent news)"
 
-    agents = [ClaudeAgent(), GPT4oAgent(), GrokAgent()]
+    cfg = get_agent_config()
+    agents = []
+    if cfg.claude_enabled:
+        agents.append(ClaudeAgent())
+    if cfg.gpt4o_enabled:
+        agents.append(GPT4oAgent())
+    if cfg.grok_enabled:
+        agents.append(GrokAgent())
+    if not agents:
+        agents = [ClaudeAgent()]  # fallback: always keep at least one agent
 
     # ── Round 1: independent analysis ────────────────────────────────────────
     logger.info("Committee round 1 starting")

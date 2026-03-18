@@ -23,6 +23,7 @@ from app.core.simulator import (
     Reflection,
     SimulatedTrade,
 )
+from app.core.agent_config import AGENT_CONFIG_KEY, AgentConfig, default_agent_config
 from app.core.trading_settings import TradingSettings, default_trading_settings
 from app.core.watchlist import WatchlistCreateRequest, WatchlistItem, WatchlistUpdateRequest
 
@@ -288,6 +289,38 @@ def save_trading_settings(trading_settings: TradingSettings) -> TradingSettings:
         connection.commit()
 
     return trading_settings
+
+
+def get_agent_config() -> AgentConfig:
+    with sqlite3.connect(settings.db_path) as connection:
+        row = connection.execute(
+            "SELECT value FROM settings WHERE key = ?;",
+            (AGENT_CONFIG_KEY,),
+        ).fetchone()
+
+    if row is None:
+        defaults = default_agent_config()
+        save_agent_config(defaults)
+        return defaults
+
+    return AgentConfig.model_validate(json.loads(row[0]))
+
+
+def save_agent_config(config: AgentConfig) -> AgentConfig:
+    with sqlite3.connect(settings.db_path) as connection:
+        connection.execute(
+            """
+            INSERT INTO settings (key, value)
+            VALUES (?, ?)
+            ON CONFLICT(key) DO UPDATE SET
+              value = excluded.value,
+              updated_at = CURRENT_TIMESTAMP;
+            """,
+            (AGENT_CONFIG_KEY, config.model_dump_json()),
+        )
+        connection.commit()
+
+    return config
 
 
 def create_chat_thread(title: str | None = None) -> tuple[int, str]:
